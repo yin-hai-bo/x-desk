@@ -5,17 +5,17 @@ use std::{
 
 use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
-    Graphics::Gdi::{COLOR_WINDOW, HBRUSH, UpdateWindow},
+    Graphics::Gdi::{HDC, UpdateWindow},
     System::LibraryLoader::GetModuleHandleW,
     UI::WindowsAndMessaging::{
         AdjustWindowRectEx, CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW,
         GetSystemMetrics, IDC_ARROW, LoadCursorW, MSG, PostQuitMessage, RegisterClassW, SM_CXSCREEN, SM_CYSCREEN,
-        SW_SHOW, ShowWindow, TranslateMessage, WM_DESTROY, WNDCLASSW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED,
-        WS_SYSMENU,
+        SW_SHOW, ShowWindow, TranslateMessage, WM_DESTROY, WM_ERASEBKGND, WM_SETTINGCHANGE, WNDCLASSW, WS_CAPTION,
+        WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
     },
 };
 
-use super::wide_null;
+use super::{theme, wide_null};
 
 pub fn run() -> io::Result<()> {
     unsafe {
@@ -33,7 +33,7 @@ pub fn run() -> io::Result<()> {
             hInstance: instance,
             hIcon: null_mut(),
             hCursor: LoadCursorW(null_mut(), IDC_ARROW),
-            hbrBackground: (COLOR_WINDOW + 1) as usize as HBRUSH,
+            hbrBackground: null_mut(),
             lpszMenuName: null(),
             lpszClassName: class_name.as_ptr(),
         };
@@ -81,6 +81,7 @@ pub fn run() -> io::Result<()> {
             return Err(io::Error::last_os_error());
         }
 
+        theme::apply_system_theme(window);
         ShowWindow(window, SW_SHOW);
         UpdateWindow(window);
 
@@ -117,6 +118,14 @@ fn run_message_loop() -> io::Result<()> {
 
 unsafe extern "system" fn window_proc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match message {
+        WM_ERASEBKGND => {
+            unsafe { theme::paint_background(window, wparam as HDC) };
+            1
+        }
+        WM_SETTINGCHANGE => {
+            theme::system_theme_changed(window);
+            0
+        }
         WM_DESTROY => {
             unsafe { PostQuitMessage(0) };
             0
@@ -124,4 +133,3 @@ unsafe extern "system" fn window_proc(window: HWND, message: u32, wparam: WPARAM
         _ => unsafe { DefWindowProcW(window, message, wparam, lparam) },
     }
 }
-
