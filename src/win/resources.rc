@@ -1,0 +1,18 @@
+#include "winres.h"
+
+#define IDR_TRAY_MENU 101
+
+#define MENU_SHOW_MAIN_WINDOW 40001
+#define MENU_ABOUT 40002
+#define MENU_EXIT 40003
+
+IDR_TRAY_MENU MENU
+BEGIN
+    POPUP "Tray"
+    BEGIN
+        MENUITEM "Show Main Window", MENU_SHOW_MAIN_WINDOW
+        MENUITEM "About", MENU_ABOUT
+        MENUITEM SEPARATOR
+        MENUITEM "Exit", MENU_EXIT
+    END
+END

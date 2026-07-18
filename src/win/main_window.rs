@@ -15,7 +15,11 @@ use windows_sys::Win32::{
     },
 };
 
-use super::{theme, tray_icon::TrayIcon, wide_null};
+use super::{
+    theme,
+    tray_icon::{self, TrayIcon},
+    wide_null,
+};
 
 pub fn run() -> io::Result<()> {
     unsafe {
@@ -121,6 +125,10 @@ fn run_message_loop() -> io::Result<()> {
 
 unsafe extern "system" fn window_proc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     match message {
+        tray_icon::TRAY_ICON_MESSAGE => {
+            tray_icon::handle_message(window, lparam);
+            0
+        }
         WM_ERASEBKGND => {
             unsafe { theme::paint_background(window, wparam as HDC) };
             1

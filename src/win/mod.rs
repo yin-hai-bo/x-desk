@@ -1,4 +1,5 @@
 pub mod main_window;
+mod resource_ids;
 mod theme;
 mod tray_icon;
 

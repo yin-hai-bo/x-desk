@@ -1,20 +1,32 @@
-use std::{io, mem::zeroed, ptr::null_mut};
+use std::{
+    io,
+    mem::zeroed,
+    ptr::{null, null_mut},
+};
 
 use windows_sys::Win32::{
-    Foundation::HWND,
+    Foundation::{HWND, LPARAM, POINT},
+    System::LibraryLoader::GetModuleHandleW,
     UI::{
         Shell::{
             NIF_ICON, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_SETVERSION, NOTIFYICON_VERSION_4,
             NOTIFYICONDATAW, Shell_NotifyIconW,
         },
-        WindowsAndMessaging::{IDI_APPLICATION, LoadIconW, WM_APP},
+        WindowsAndMessaging::{
+            DestroyMenu, GetCursorPos, GetSubMenu, IDI_APPLICATION, LoadIconW, LoadMenuW, MB_ICONINFORMATION, MB_OK,
+            MessageBoxW, PostQuitMessage, SW_RESTORE, SetForegroundWindow, SetMenuDefaultItem, ShowWindow,
+            TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WM_APP, WM_CONTEXTMENU, WM_LBUTTONDBLCLK, WM_RBUTTONUP,
+        },
     },
 };
 
-use super::wide_null;
+use super::{
+    resource_ids::{IDR_TRAY_MENU, MENU_ABOUT, MENU_EXIT, MENU_SHOW_MAIN_WINDOW},
+    wide_null,
+};
 
 const TRAY_ICON_ID: u32 = 1;
-const TRAY_ICON_MESSAGE: u32 = WM_APP + 1;
+pub(super) const TRAY_ICON_MESSAGE: u32 = WM_APP + 1;
 
 pub(super) struct TrayIcon {
     data: NOTIFYICONDATAW,
@@ -49,6 +61,14 @@ impl TrayIcon {
     }
 }
 
+pub(super) fn handle_message(window: HWND, lparam: LPARAM) {
+    match tray_event(lparam) {
+        WM_LBUTTONDBLCLK => show_main_window(window),
+        WM_RBUTTONUP | WM_CONTEXTMENU => show_context_menu(window),
+        _ => {}
+    }
+}
+
 impl Drop for TrayIcon {
     fn drop(&mut self) {
         unsafe {
@@ -62,4 +82,69 @@ fn write_tip(buffer: &mut [u16; 128], tip: &str) {
     let length = encoded.len().min(buffer.len());
     buffer[..length].copy_from_slice(&encoded[..length]);
     buffer[buffer.len() - 1] = 0;
+}
+
+fn tray_event(lparam: LPARAM) -> u32 {
+    (lparam as u32) & 0xffff
+}
+
+fn show_context_menu(window: HWND) {
+    let menu = unsafe { LoadMenuW(GetModuleHandleW(null()), IDR_TRAY_MENU as usize as _) };
+    if menu.is_null() {
+        return;
+    }
+
+    let popup_menu = unsafe { GetSubMenu(menu, 0) };
+    if popup_menu.is_null() {
+        unsafe { DestroyMenu(menu) };
+        return;
+    }
+
+    unsafe { SetMenuDefaultItem(popup_menu, MENU_SHOW_MAIN_WINDOW as u32, 0) };
+
+    let mut cursor = POINT { x: 0, y: 0 };
+    let command = unsafe {
+        if GetCursorPos(&mut cursor) == 0 {
+            DestroyMenu(menu);
+            return;
+        }
+
+        SetForegroundWindow(window);
+        TrackPopupMenu(
+            popup_menu,
+            TPM_RIGHTBUTTON | TPM_RETURNCMD,
+            cursor.x,
+            cursor.y,
+            0,
+            window,
+            null(),
+        )
+    };
+
+    unsafe {
+        DestroyMenu(menu);
+    }
+
+    match command as usize {
+        MENU_SHOW_MAIN_WINDOW => show_main_window(window),
+        MENU_ABOUT => show_about(window),
+        MENU_EXIT => unsafe { PostQuitMessage(0) },
+        _ => {}
+    }
+}
+
+fn show_main_window(window: HWND) {
+    unsafe {
+        ShowWindow(window, SW_RESTORE);
+        SetForegroundWindow(window);
+    }
+}
+
+fn show_about(window: HWND) {
+    let title = wide_null("About X-Desk");
+    let message = wide_null("X-Desk");
+
+    unsafe {
+        MessageBoxW(window, message.as_ptr(), title.as_ptr(), MB_OK | MB_ICONINFORMATION);
+    }
 }
