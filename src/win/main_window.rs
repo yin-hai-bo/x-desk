@@ -15,7 +15,7 @@ use windows_sys::Win32::{
     },
 };
 
-use super::{theme, wide_null};
+use super::{theme, tray_icon::TrayIcon, wide_null};
 
 pub fn run() -> io::Result<()> {
     unsafe {
@@ -61,7 +61,8 @@ pub fn run() -> io::Result<()> {
         let window_x = (screen_width - window_width) / 2;
         let window_y = (screen_height - window_height) / 2;
 
-        let title = wide_null("X-Desk");
+        let title_text = "X-Desk";
+        let title = wide_null(title_text);
         let window = CreateWindowExW(
             0,
             class_name.as_ptr(),
@@ -80,6 +81,8 @@ pub fn run() -> io::Result<()> {
         if window.is_null() {
             return Err(io::Error::last_os_error());
         }
+
+        let _tray_icon = TrayIcon::new(window, title_text)?;
 
         theme::apply_system_theme(window);
         ShowWindow(window, SW_SHOW);
