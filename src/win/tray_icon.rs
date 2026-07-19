@@ -21,7 +21,7 @@ use windows_sys::Win32::{
 };
 
 use super::{
-    resource_ids::{IDR_TRAY_MENU, MENU_ABOUT, MENU_EXIT, MENU_SHOW_MAIN_WINDOW},
+    resource_ids::{IDI_APP_ICON, IDR_TRAY_MENU, MENU_ABOUT, MENU_EXIT, MENU_SHOW_MAIN_WINDOW},
     wide_null,
 };
 
@@ -34,7 +34,11 @@ pub(super) struct TrayIcon {
 
 impl TrayIcon {
     pub(super) fn new(window: HWND, tip: &str) -> io::Result<Self> {
-        let icon = unsafe { LoadIconW(null_mut(), IDI_APPLICATION) };
+        let instance = unsafe { GetModuleHandleW(null()) };
+        let mut icon = unsafe { LoadIconW(instance, IDI_APP_ICON as usize as _) };
+        if icon.is_null() {
+            icon = unsafe { LoadIconW(null_mut(), IDI_APPLICATION) };
+        }
         if icon.is_null() {
             return Err(io::Error::last_os_error());
         }

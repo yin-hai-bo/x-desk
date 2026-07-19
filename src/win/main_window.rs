@@ -9,13 +9,14 @@ use windows_sys::Win32::{
     System::LibraryLoader::GetModuleHandleW,
     UI::WindowsAndMessaging::{
         AdjustWindowRectEx, CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW,
-        GetSystemMetrics, IDC_ARROW, LoadCursorW, MSG, PostQuitMessage, RegisterClassW, SM_CXSCREEN, SM_CYSCREEN,
-        SW_SHOW, ShowWindow, TranslateMessage, WM_DESTROY, WM_ERASEBKGND, WM_SETTINGCHANGE, WNDCLASSW, WS_CAPTION,
-        WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
+        GetSystemMetrics, IDC_ARROW, IDI_APPLICATION, LoadCursorW, LoadIconW, MSG, PostQuitMessage, RegisterClassW,
+        SM_CXSCREEN, SM_CYSCREEN, SW_SHOW, ShowWindow, TranslateMessage, WM_DESTROY, WM_ERASEBKGND, WM_SETTINGCHANGE,
+        WNDCLASSW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
     },
 };
 
 use super::{
+    resource_ids::IDI_APP_ICON,
     theme,
     tray_icon::{self, TrayIcon},
     wide_null,
@@ -28,6 +29,11 @@ pub fn run() -> io::Result<()> {
             return Err(io::Error::last_os_error());
         }
 
+        let mut icon = LoadIconW(instance, IDI_APP_ICON as usize as _);
+        if icon.is_null() {
+            icon = LoadIconW(null_mut(), IDI_APPLICATION);
+        }
+
         let class_name = wide_null("YHB-XDeskMainWindow");
         let window_class = WNDCLASSW {
             style: CS_HREDRAW | CS_VREDRAW,
@@ -35,7 +41,7 @@ pub fn run() -> io::Result<()> {
             cbClsExtra: 0,
             cbWndExtra: 0,
             hInstance: instance,
-            hIcon: null_mut(),
+            hIcon: icon,
             hCursor: LoadCursorW(null_mut(), IDC_ARROW),
             hbrBackground: null_mut(),
             lpszMenuName: null(),

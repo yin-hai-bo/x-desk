@@ -1,10 +1,13 @@
 #include "winres.h"
 
 #define IDR_TRAY_MENU 101
+#define IDI_APP_ICON 102
 
 #define MENU_SHOW_MAIN_WINDOW 40001
 #define MENU_ABOUT 40002
 #define MENU_EXIT 40003
+
+IDI_APP_ICON ICON "assets/icon.ico"
 
 IDR_TRAY_MENU MENU
 BEGIN
