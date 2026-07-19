@@ -15,6 +15,8 @@ use windows_sys::Win32::{
     },
 };
 
+use crate::config::Config;
+
 use super::{
     resource_ids::IDI_APP_ICON,
     theme,
@@ -22,7 +24,7 @@ use super::{
     wide_null,
 };
 
-pub fn run() -> io::Result<()> {
+pub fn run(_config: Option<Config>) -> io::Result<()> {
     unsafe {
         let instance = GetModuleHandleW(null());
         if instance.is_null() {
