@@ -4,7 +4,10 @@ use windows_sys::Win32::{
     Foundation::{HWND, RECT},
     Graphics::{
         Dwm::{DWMWA_USE_IMMERSIVE_DARK_MODE, DwmSetWindowAttribute},
-        Gdi::{CreateSolidBrush, DeleteObject, FillRect, HDC, InvalidateRect},
+        Gdi::{
+            CreateSolidBrush, DeleteObject, FillRect, HDC, InvalidateRect, RDW_ALLCHILDREN, RDW_ERASE, RDW_INVALIDATE,
+            RedrawWindow,
+        },
     },
     System::Registry::{HKEY_CURRENT_USER, RRF_RT_REG_DWORD, RegGetValueW},
     UI::WindowsAndMessaging::GetClientRect,
@@ -35,11 +38,7 @@ pub(super) fn apply_system_theme(window: HWND) {
 }
 
 pub(super) unsafe fn paint_background(window: HWND, device_context: HDC) {
-    let color = match system_theme() {
-        SystemTheme::Light => 0x00ffffff,
-        SystemTheme::Dark => 0x00202020,
-    };
-    let brush = unsafe { CreateSolidBrush(color) };
+    let brush = unsafe { CreateSolidBrush(background_color()) };
     if brush.is_null() {
         return;
     }
@@ -61,7 +60,24 @@ pub(super) unsafe fn paint_background(window: HWND, device_context: HDC) {
 
 pub(super) fn system_theme_changed(window: HWND) {
     apply_system_theme(window);
-    unsafe { InvalidateRect(window, null(), 1) };
+    unsafe {
+        InvalidateRect(window, null(), 1);
+        RedrawWindow(window, null(), null_mut(), RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN);
+    }
+}
+
+pub(super) fn background_color() -> u32 {
+    match system_theme() {
+        SystemTheme::Light => 0x00ffffff,
+        SystemTheme::Dark => 0x00202020,
+    }
+}
+
+pub(super) fn hyperlink_text_color() -> u32 {
+    match system_theme() {
+        SystemTheme::Light => 0x00cc6600,
+        SystemTheme::Dark => 0x00ffb56b,
+    }
 }
 
 fn system_theme() -> SystemTheme {

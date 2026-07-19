@@ -1,5 +1,7 @@
 use std::{
     io,
+    os::windows::ffi::OsStrExt,
+    path::PathBuf,
     ptr::{null, null_mut},
 };
 
@@ -7,24 +9,29 @@ use windows_sys::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
     Graphics::Gdi::{HDC, UpdateWindow},
     System::LibraryLoader::GetModuleHandleW,
-    UI::WindowsAndMessaging::{
-        AdjustWindowRectEx, CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DispatchMessageW, GetMessageW,
-        GetSystemMetrics, IDC_ARROW, IDI_APPLICATION, LoadCursorW, LoadIconW, MSG, PostQuitMessage, RegisterClassW,
-        SM_CXSCREEN, SM_CYSCREEN, SW_SHOW, ShowWindow, TranslateMessage, WM_DESTROY, WM_ERASEBKGND, WM_SETTINGCHANGE,
-        WNDCLASSW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
+    UI::{
+        Shell::ShellExecuteW,
+        WindowsAndMessaging::{
+            AdjustWindowRectEx, CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DispatchMessageW,
+            GetClientRect, GetMessageW, GetSystemMetrics, IDC_ARROW, IDI_APPLICATION, LoadCursorW, LoadIconW, MSG,
+            PostQuitMessage, RegisterClassW, SM_CXSCREEN, SM_CYSCREEN, SW_SHOW, SW_SHOWNORMAL, ShowWindow,
+            TranslateMessage, WM_DESTROY, WM_ERASEBKGND, WM_SETTINGCHANGE, WNDCLASSW, WS_CAPTION, WS_MINIMIZEBOX,
+            WS_OVERLAPPED, WS_SYSMENU,
+        },
     },
 };
 
 use crate::config::Config;
 
 use super::{
+    hyperlink_text::{HyperLinkFont, HyperLinkText},
     resource_ids::IDI_APP_ICON,
     theme,
     tray_icon::{self, TrayIcon},
     wide_null,
 };
 
-pub fn run(_config: Option<Config>) -> io::Result<()> {
+pub fn run(_config: Option<Config>, config_dir: PathBuf) -> io::Result<()> {
     unsafe {
         let instance = GetModuleHandleW(null());
         if instance.is_null() {
@@ -95,6 +102,28 @@ pub fn run(_config: Option<Config>) -> io::Result<()> {
         }
 
         let _tray_icon = TrayIcon::new(window, title_text)?;
+        let mut client_rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        if GetClientRect(window, &mut client_rect) == 0 {
+            return Err(io::Error::last_os_error());
+        }
+
+        let _config_dir_link = HyperLinkText::new_right_aligned(
+            window,
+            "Open configuration directory",
+            RECT {
+                left: 24,
+                top: client_rect.bottom - 16 - 28,
+                right: client_rect.right - 24,
+                bottom: client_rect.bottom - 16,
+            },
+            HyperLinkFont::new("Segoe UI", 10),
+            move || open_config_dir(&config_dir),
+        )?;
 
         theme::apply_system_theme(window);
         ShowWindow(window, SW_SHOW);
@@ -102,6 +131,25 @@ pub fn run(_config: Option<Config>) -> io::Result<()> {
 
         run_message_loop()
     }
+}
+
+fn open_config_dir(config_dir: &PathBuf) {
+    let operation = wide_null("open");
+    let path = wide_os_null(config_dir.as_os_str());
+    unsafe {
+        ShellExecuteW(
+            null_mut(),
+            operation.as_ptr(),
+            path.as_ptr(),
+            null(),
+            null(),
+            SW_SHOWNORMAL,
+        );
+    }
+}
+
+fn wide_os_null(value: &std::ffi::OsStr) -> Vec<u16> {
+    value.encode_wide().chain(Some(0)).collect()
 }
 
 fn run_message_loop() -> io::Result<()> {

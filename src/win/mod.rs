@@ -5,6 +5,7 @@ use windows_sys::Win32::{
     UI::Shell::{FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath},
 };
 
+pub mod hyperlink_text;
 pub mod main_window;
 mod resource_ids;
 mod theme;
