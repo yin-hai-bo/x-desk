@@ -7,7 +7,7 @@ use anyhow::{Context, anyhow};
 use windows::{
     Win32::{
         Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM},
-        Graphics::Gdi::{DT_RIGHT, HBRUSH, HDC, UpdateWindow},
+        Graphics::Gdi::{HBRUSH, HDC, UpdateWindow},
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             Shell::ShellExecuteW,
@@ -27,7 +27,7 @@ use crate::{
     config::Config,
     win::{
         const_define,
-        hyperlink_text::{HyperLinkFont, HyperLinkText},
+        hyperlink_text::{Anchor, HorizontalAnchor, HyperLinkFont, HyperLinkText, VerticalAnchor},
         resource_ids::IDI_APP_ICON,
         theme,
         tray_icon::TrayIcon,
@@ -149,14 +149,11 @@ impl MainWindow {
         HyperLinkText::create(
             hwnd,
             "Open configuration directory",
-            RECT {
-                left: 24,
-                top: client_rect.bottom - 16 - 28,
-                right: client_rect.right - 24,
-                bottom: client_rect.bottom - 16,
-            },
+            Anchor::new(
+                HorizontalAnchor::Right(client_rect.right - 24),
+                VerticalAnchor::Bottom(client_rect.bottom - 16),
+            ),
             HyperLinkFont::new("Segoe UI", 12),
-            DT_RIGHT,
             Some(move || Self::open_dir(&dir)),
         )
     }
