@@ -1,28 +1,29 @@
-use std::{
-    io,
-    ptr::{null, null_mut},
-    sync::OnceLock,
+use std::{io, sync::OnceLock};
+
+use ::windows::Win32::UI::WindowsAndMessaging::{RegisterClassExW, WNDCLASSEXW};
+use windows::{
+    Win32::{
+        Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM},
+        Graphics::Gdi::{
+            CreateFontW, CreateSolidBrush, DRAW_TEXT_FORMAT, DT_SINGLELINE, DT_VCENTER, DrawTextW, FONT_CHARSET,
+            FONT_CLIP_PRECISION, FONT_OUTPUT_PRECISION, FONT_QUALITY, FW_NORMAL, FillRect, HBRUSH, HFONT,
+            InvalidateRect, SelectObject, SetBkMode, SetTextColor, TRANSPARENT,
+        },
+        System::LibraryLoader::GetModuleHandleW,
+        UI::WindowsAndMessaging::{
+            CS_HREDRAW, CS_VREDRAW, DefWindowProcW, GetClientRect, HCURSOR, HICON, IDC_ARROW, IDC_HAND, LoadCursorW,
+            SW_SHOW, SetCursor, WINDOW_EX_STYLE, WM_ERASEBKGND, WM_LBUTTONUP, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
+            WM_SETCURSOR, WM_SETTINGCHANGE, WS_CHILD, WS_VISIBLE,
+        },
+    },
+    core::{Owned, PCWSTR, w},
 };
 
-use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
-    Graphics::Gdi::{
-        BeginPaint, CreateFontW, CreateSolidBrush, DT_RIGHT, DT_SINGLELINE, DT_VCENTER, DeleteObject, DrawTextW,
-        EndPaint, FW_NORMAL, FillRect, HBRUSH, HFONT, InvalidateRect, PAINTSTRUCT, SelectObject, SetBkMode,
-        SetTextColor, TRANSPARENT,
-    },
-    System::LibraryLoader::GetModuleHandleW,
-    UI::WindowsAndMessaging::{
-        CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DestroyWindow, GWLP_USERDATA,
-        GetClientRect, GetWindowLongPtrW, IDC_ARROW, IDC_HAND, IsWindow, LoadCursorW, RegisterClassW, SW_SHOW,
-        SetCursor, SetWindowLongPtrW, ShowWindow, WM_ERASEBKGND, WM_LBUTTONUP, WM_NCCREATE, WM_NCDESTROY, WM_PAINT,
-        WM_SETCURSOR, WM_SETTINGCHANGE, WNDCLASSW, WS_CHILD, WS_VISIBLE,
-    },
-};
+use crate::win::{wide_string::WideString, win_utils::PaintDC, window::Window};
 
-use super::{theme, wide_null};
+use super::theme;
 
-const CLASS_NAME: &str = "YHB-XDeskHyperLinkText";
+const CLASS_NAME: PCWSTR = w!("YHB-XDeskHyperLinkText");
 
 pub struct HyperLinkFont {
     name: String,
@@ -39,205 +40,158 @@ impl HyperLinkFont {
 }
 
 pub struct HyperLinkText {
-    window: HWND,
-    _state: Box<HyperLinkState>,
+    font: Owned<HFONT>,
+    draw_alignment: DRAW_TEXT_FORMAT,
+    on_click: Option<Box<dyn Fn() + 'static>>,
 }
 
 impl HyperLinkText {
-    pub fn new_right_aligned<F>(
+    pub fn create(
         parent: HWND,
         text: &str,
         bounds: RECT,
         font: HyperLinkFont,
-        on_click: F,
-    ) -> io::Result<Self>
-    where
-        F: FnMut() + 'static,
-    {
-        Self::create(parent, text, bounds, font, DT_RIGHT, on_click)
-    }
+        draw_alignment: DRAW_TEXT_FORMAT,
+        on_click: Option<impl Fn() + 'static>,
+    ) -> anyhow::Result<Box<Window<HyperLinkText>>> {
+        let instance = unsafe { GetModuleHandleW(PCWSTR::null())?.into() };
+        register_window_class(instance)?;
 
-    fn create<F>(
-        parent: HWND,
-        text: &str,
-        bounds: RECT,
-        font: HyperLinkFont,
-        draw_alignment: u32,
-        on_click: F,
-    ) -> io::Result<Self>
-    where
-        F: FnMut() + 'static,
-    {
-        register_window_class()?;
-
-        let mut state = Box::new(HyperLinkState {
-            text: wide_null(text),
-            font: create_underline_font(&font)?,
+        let component = Self {
+            font: unsafe { Owned::new(create_underline_font(parent, &font)?) },
             draw_alignment,
-            on_click: Box::new(on_click),
-        });
-
-        let class_name = wide_null(CLASS_NAME);
-        let window = unsafe {
-            CreateWindowExW(
-                0,
-                class_name.as_ptr(),
-                state.text.as_ptr(),
-                WS_CHILD | WS_VISIBLE,
-                bounds.left,
-                bounds.top,
-                bounds.right - bounds.left,
-                bounds.bottom - bounds.top,
-                parent,
-                null_mut(),
-                GetModuleHandleW(null()),
-                state.as_mut() as *mut HyperLinkState as *mut _,
-            )
+            on_click: if let Some(cb) = on_click {
+                Some(Box::new(cb))
+            } else {
+                None
+            },
         };
-        if window.is_null() {
-            return Err(io::Error::last_os_error());
-        }
 
-        unsafe { ShowWindow(window, SW_SHOW) };
-
-        Ok(Self { window, _state: state })
+        let window = Window::create(
+            WINDOW_EX_STYLE(0),
+            CLASS_NAME,
+            WideString::new(text).as_pcwstr(),
+            WS_CHILD | WS_VISIBLE,
+            bounds.left,
+            bounds.top,
+            bounds.right - bounds.left,
+            bounds.bottom - bounds.top,
+            Some(parent),
+            None,
+            Some(instance.into()),
+            component,
+        )?;
+        window.show_window(SW_SHOW);
+        return Ok(window);
     }
-}
 
-impl Drop for HyperLinkText {
-    fn drop(&mut self) {
-        unsafe {
-            if IsWindow(self.window) != 0 {
-                DestroyWindow(self.window);
+    unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        match message {
+            WM_NCCREATE => Window::<HyperLinkText>::on_wm_nccreate(hwnd, lparam),
+            WM_PAINT => {
+                let _ = paint(hwnd);
+                return LRESULT(0);
             }
+            WM_ERASEBKGND => return LRESULT(1),
+            WM_SETTINGCHANGE => {
+                unsafe {
+                    let _ = InvalidateRect(Some(hwnd), None, true);
+                };
+                return LRESULT(0);
+            }
+            WM_SETCURSOR => {
+                unsafe {
+                    SetCursor(Some(cursor()));
+                }
+                return LRESULT(1);
+            }
+            WM_LBUTTONUP => {
+                if let Some(p) = unsafe { Window::<HyperLinkText>::get_self_from_hwnd(hwnd) } {
+                    let w = unsafe { &mut *p };
+                    if let Some(on_click) = &w.component().on_click {
+                        on_click();
+                    };
+                }
+                return LRESULT(0);
+            }
+            WM_NCDESTROY => Window::<HyperLinkText>::on_wm_ncdestroy(hwnd),
+            _ => {}
         }
+        return unsafe { DefWindowProcW(hwnd, message, wparam, lparam) };
     }
 }
 
-struct HyperLinkState {
-    text: Vec<u16>,
-    font: HFONT,
-    draw_alignment: u32,
-    on_click: Box<dyn FnMut()>,
+fn cursor() -> HCURSOR {
+    unsafe { LoadCursorW(None, IDC_HAND).unwrap_or(LoadCursorW(None, IDC_ARROW).unwrap_or_default()) }
 }
 
-impl Drop for HyperLinkState {
-    fn drop(&mut self) {
-        unsafe {
-            DeleteObject(self.font);
-        }
-    }
-}
-
-fn register_window_class() -> io::Result<()> {
+fn register_window_class(inst: HINSTANCE) -> anyhow::Result<()> {
     static REGISTERED: OnceLock<io::Result<()>> = OnceLock::new();
 
     REGISTERED
         .get_or_init(|| {
-            let class_name = wide_null(CLASS_NAME);
-            let instance = unsafe { GetModuleHandleW(null()) };
-            let window_class = WNDCLASSW {
+            let window_class = WNDCLASSEXW {
+                cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
                 style: CS_HREDRAW | CS_VREDRAW,
-                lpfnWndProc: Some(window_proc),
+                lpfnWndProc: Some(HyperLinkText::window_proc),
                 cbClsExtra: 0,
                 cbWndExtra: 0,
-                hInstance: instance,
-                hIcon: null_mut(),
-                hCursor: unsafe { LoadCursorW(null_mut(), IDC_HAND) },
-                hbrBackground: null_mut(),
-                lpszMenuName: null(),
-                lpszClassName: class_name.as_ptr(),
+                hInstance: inst,
+                hIcon: HICON::default(),
+                hIconSm: HICON::default(),
+                hCursor: cursor(),
+                hbrBackground: HBRUSH::default(),
+                lpszMenuName: PCWSTR::null(),
+                lpszClassName: CLASS_NAME,
             };
-
-            if unsafe { RegisterClassW(&window_class) } == 0 {
-                Err(io::Error::last_os_error())
+            if unsafe { RegisterClassExW(&window_class) } == 0 {
+                Err(io::Error::last_os_error().into())
             } else {
                 Ok(())
             }
         })
         .as_ref()
         .map(|_| ())
-        .map_err(|error| io::Error::new(error.kind(), error.to_string()))
+        .map_err(|error| error.into())
 }
 
-fn create_underline_font(font: &HyperLinkFont) -> io::Result<HFONT> {
-    let font_name = wide_null(&font.name);
-    let height = -((font.point_size.max(1) * 96) / 72);
+fn create_underline_font(hwnd: HWND, font: &HyperLinkFont) -> anyhow::Result<HFONT> {
+    let font_name = WideString::new(&font.name);
+    let mut dpi = unsafe { windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd) };
+    if dpi == 0 {
+        dpi = 96;
+    }
+    let height = -((font.point_size.max(1) * dpi as i32) / 72);
     let handle = unsafe {
         CreateFontW(
             height,
             0,
             0,
             0,
-            FW_NORMAL as i32,
+            FW_NORMAL.0 as i32,
             0,
             1,
             0,
+            FONT_CHARSET::default(),
+            FONT_OUTPUT_PRECISION::default(),
+            FONT_CLIP_PRECISION::default(),
+            FONT_QUALITY::default(),
             0,
-            0,
-            0,
-            0,
-            0,
-            font_name.as_ptr(),
+            font_name.as_pcwstr(),
         )
     };
-    if handle.is_null() {
-        Err(io::Error::last_os_error())
+    if handle.is_invalid() {
+        Err(io::Error::last_os_error().into())
     } else {
         Ok(handle)
     }
 }
 
-unsafe extern "system" fn window_proc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    match message {
-        WM_NCCREATE => {
-            let create = lparam as *const CREATESTRUCTW;
-            unsafe {
-                SetWindowLongPtrW(window, GWLP_USERDATA, (*create).lpCreateParams as isize);
-            }
-            1
-        }
-        WM_PAINT => {
-            unsafe { paint(window) };
-            0
-        }
-        WM_ERASEBKGND => 1,
-        WM_SETTINGCHANGE => {
-            unsafe { InvalidateRect(window, null(), 1) };
-            0
-        }
-        WM_SETCURSOR => {
-            unsafe {
-                let mut cursor = LoadCursorW(null_mut(), IDC_HAND);
-                if cursor.is_null() {
-                    cursor = LoadCursorW(null_mut(), IDC_ARROW);
-                }
-                SetCursor(cursor);
-            }
-            1
-        }
-        WM_LBUTTONUP => {
-            if let Some(state) = unsafe { state_mut(window) } {
-                (state.on_click)();
-            }
-            0
-        }
-        WM_NCDESTROY => {
-            unsafe {
-                SetWindowLongPtrW(window, GWLP_USERDATA, 0);
-            }
-            0
-        }
-        _ => unsafe { DefWindowProcW(window, message, wparam, lparam) },
-    }
-}
-
-unsafe fn paint(window: HWND) {
-    let mut paint = unsafe { std::mem::zeroed::<PAINTSTRUCT>() };
-    let device_context = unsafe { BeginPaint(window, &mut paint) };
-    if device_context.is_null() {
-        return;
-    }
+fn paint(hwnd: HWND) -> anyhow::Result<()> {
+    let dc = PaintDC::new(hwnd)?;
+    let w = unsafe { Window::<HyperLinkText>::get_self_from_hwnd(hwnd) }
+        .ok_or_else(|| anyhow::anyhow!("Cannot get window object when paint"))?;
+    let window = unsafe { &*w };
 
     let mut rect = RECT {
         left: 0,
@@ -246,41 +200,28 @@ unsafe fn paint(window: HWND) {
         bottom: 0,
     };
     unsafe {
-        GetClientRect(window, &mut rect);
+        let _ = GetClientRect(hwnd, &mut rect);
     }
 
-    let brush: HBRUSH = unsafe { CreateSolidBrush(theme::background_color()) };
-    if !brush.is_null() {
+    let brush = unsafe { Owned::new(CreateSolidBrush(theme::background_color())) };
+    if !brush.is_invalid() {
         unsafe {
-            FillRect(device_context, &rect, brush);
-            DeleteObject(brush);
+            FillRect(*dc, &rect, *brush);
         }
     }
 
-    if let Some(state) = unsafe { state_mut(window) } {
-        unsafe {
-            let old_font = SelectObject(device_context, state.font);
-            SetBkMode(device_context, TRANSPARENT as i32);
-            SetTextColor(device_context, theme::hyperlink_text_color());
-            DrawTextW(
-                device_context,
-                state.text.as_ptr(),
-                -1,
-                &mut rect,
-                state.draw_alignment | DT_VCENTER | DT_SINGLELINE,
-            );
-            SelectObject(device_context, old_font);
-        }
+    let mut text = window.get_window_text()?;
+    unsafe {
+        let old_font = SelectObject(*dc, (*window.component().font).into());
+        SetBkMode(*dc, TRANSPARENT);
+        SetTextColor(*dc, theme::hyperlink_text_color());
+        DrawTextW(
+            *dc,
+            &mut text,
+            &mut rect,
+            window.component().draw_alignment | DT_VCENTER | DT_SINGLELINE,
+        );
+        SelectObject(*dc, old_font);
     }
-
-    unsafe { EndPaint(window, &paint) };
-}
-
-unsafe fn state_mut(window: HWND) -> Option<&'static mut HyperLinkState> {
-    let value = unsafe { GetWindowLongPtrW(window, GWLP_USERDATA) };
-    if value == 0 {
-        None
-    } else {
-        Some(unsafe { &mut *(value as *mut HyperLinkState) })
-    }
+    Ok(())
 }

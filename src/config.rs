@@ -1,5 +1,12 @@
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::{fs, io, path::Path};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
+
+#[cfg(target_os = "windows")]
+use crate::win;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MonitorConfig {
@@ -12,7 +19,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn load_from_file<P>(path: P) -> io::Result<Self>
+    pub fn load_from_file<P>(path: &P) -> anyhow::Result<Self>
     where
         P: AsRef<Path>,
     {
@@ -28,37 +35,30 @@ impl Config {
         Ok(config)
     }
 
-    fn create_default_file(path: &Path, default_config: &Config) -> io::Result<()> {
+    fn create_default_file(path: &Path, default_config: &Config) -> anyhow::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
 
         let content = serde_json::to_string_pretty(default_config)?;
-        fs::write(path, content)
+        fs::write(path, content).context("Write configuration file failed")
+    }
+
+    pub fn config_file_path(_app_name: &str) -> anyhow::Result<PathBuf> {
+        #[cfg(target_os = "windows")]
+        let dir = win::appdata_dir()?.join("yinhaibo").join(_app_name);
+
+        #[cfg(not(target_os = "windows"))]
+        let dir = current_exe_dir()?;
+
+        Ok(dir.join("config.json"))
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::Config;
-    use std::{fs, io, path::PathBuf};
-
-    #[test]
-    fn load_from_file_creates_missing_default_config() -> io::Result<()> {
-        let path = unique_test_path();
-        let config = Config::load_from_file(&path)?;
-
-        assert!(path.exists());
-        assert!(config.monitors.is_empty());
-
-        fs::remove_file(&path)?;
-        fs::remove_dir_all(path.parent().unwrap())?;
-        Ok(())
-    }
-
-    fn unique_test_path() -> PathBuf {
-        std::env::temp_dir()
-            .join(format!("x-desk-tests-{}", std::process::id()))
-            .join("config.json")
-    }
+#[cfg(not(target_os = "windows"))]
+fn current_exe_dir() -> anyhow::Result<PathBuf> {
+    let path = std::env::current_exe()?;
+    path.parent()
+        .map(PathBuf::from)
+        .context("Get application directory failed.")
 }

@@ -1,154 +1,130 @@
-use std::{
-    io,
-    mem::zeroed,
-    ptr::{null, null_mut},
-};
+use std::{io, mem::zeroed};
 
-use windows_sys::Win32::{
-    Foundation::{HWND, LPARAM, POINT},
-    System::LibraryLoader::GetModuleHandleW,
-    UI::{
-        Shell::{
-            NIF_ICON, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_SETVERSION, NOTIFYICON_VERSION_4,
-            NOTIFYICONDATAW, Shell_NotifyIconW,
-        },
-        WindowsAndMessaging::{
-            DestroyMenu, GetCursorPos, GetSubMenu, IDI_APPLICATION, LoadIconW, LoadMenuW, MB_ICONINFORMATION, MB_OK,
-            MessageBoxW, PostQuitMessage, SW_RESTORE, SetForegroundWindow, SetMenuDefaultItem, ShowWindow,
-            TPM_RETURNCMD, TPM_RIGHTBUTTON, TrackPopupMenu, WM_APP, WM_CONTEXTMENU, WM_LBUTTONDBLCLK, WM_RBUTTONUP,
+use windows::{
+    Win32::{
+        Foundation::{FALSE, HWND, LPARAM, POINT},
+        System::LibraryLoader::GetModuleHandleW,
+        UI::{
+            Shell::{
+                NIF_ICON, NIF_MESSAGE, NIF_SHOWTIP, NIF_TIP, NIM_ADD, NIM_DELETE, NIM_SETVERSION, NOTIFYICON_VERSION_4,
+                NOTIFYICONDATAW, Shell_NotifyIconW,
+            },
+            WindowsAndMessaging::{
+                GetCursorPos, IDI_APPLICATION, LoadIconW, MB_ICONINFORMATION, MB_OK, MessageBoxW, PostQuitMessage,
+                SW_RESTORE, SetForegroundWindow, ShowWindow, WM_CONTEXTMENU, WM_LBUTTONDBLCLK, WM_RBUTTONUP,
+            },
         },
     },
+    core::{PCWSTR, Result},
 };
 
+use crate::win::wide_string::WideString;
+
 use super::{
+    menu::Menu,
     resource_ids::{IDI_APP_ICON, IDR_TRAY_MENU, MENU_ABOUT, MENU_EXIT, MENU_SHOW_MAIN_WINDOW},
-    wide_null,
 };
 
 const TRAY_ICON_ID: u32 = 1;
-pub(super) const TRAY_ICON_MESSAGE: u32 = WM_APP + 1;
 
 pub(super) struct TrayIcon {
     data: NOTIFYICONDATAW,
+    app_name: String,
 }
 
 impl TrayIcon {
-    pub(super) fn new(window: HWND, tip: &str) -> io::Result<Self> {
-        let instance = unsafe { GetModuleHandleW(null()) };
-        let mut icon = unsafe { LoadIconW(instance, IDI_APP_ICON as usize as _) };
-        if icon.is_null() {
-            icon = unsafe { LoadIconW(null_mut(), IDI_APPLICATION) };
+    pub fn new(app_name: &str, hwnd: HWND, callback_message_id: u32) -> anyhow::Result<Self> {
+        let instance = unsafe { GetModuleHandleW(PCWSTR::null()) }?.into();
+        let mut icon = unsafe { LoadIconW(Some(instance), PCWSTR(IDI_APP_ICON as usize as *const u16)) };
+        if icon.is_err() {
+            icon = unsafe { LoadIconW(None, IDI_APPLICATION) };
         }
-        if icon.is_null() {
-            return Err(io::Error::last_os_error());
+        if icon.is_err() {
+            return Err(io::Error::last_os_error().into());
         }
+        let icon = icon.unwrap();
 
         let mut data = unsafe { zeroed::<NOTIFYICONDATAW>() };
         data.cbSize = size_of::<NOTIFYICONDATAW>() as u32;
-        data.hWnd = window;
+        data.hWnd = hwnd;
         data.uID = TRAY_ICON_ID;
         data.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
-        data.uCallbackMessage = TRAY_ICON_MESSAGE;
+        data.uCallbackMessage = callback_message_id;
         data.hIcon = icon;
-        write_tip(&mut data.szTip, tip);
 
-        if unsafe { Shell_NotifyIconW(NIM_ADD, &data) } == 0 {
-            return Err(io::Error::last_os_error());
+        WideString::new(app_name).copy_to(&mut data.szTip);
+
+        if unsafe { Shell_NotifyIconW(NIM_ADD, &data) } == FALSE {
+            return Err(io::Error::last_os_error().into());
         }
 
         unsafe {
             data.Anonymous.uVersion = NOTIFYICON_VERSION_4;
-            Shell_NotifyIconW(NIM_SETVERSION, &data);
+            let _ = Shell_NotifyIconW(NIM_SETVERSION, &data);
         }
 
-        Ok(Self { data })
+        Ok(Self {
+            data,
+            app_name: app_name.to_string(),
+        })
     }
-}
 
-pub(super) fn handle_message(window: HWND, lparam: LPARAM) {
-    match tray_event(lparam) {
-        WM_LBUTTONDBLCLK => show_main_window(window),
-        WM_RBUTTONUP | WM_CONTEXTMENU => show_context_menu(window),
-        _ => {}
+    pub fn handle_message(&self, window: HWND, lparam: LPARAM) {
+        match lparam.0 as u32 & 0xffff {
+            WM_LBUTTONDBLCLK => Self::show_main_window(window),
+            WM_RBUTTONUP | WM_CONTEXTMENU => {
+                let _ = self.show_context_menu(window);
+            }
+            _ => {}
+        }
+    }
+
+    fn show_context_menu(&self, window: HWND) -> Result<()> {
+        let menu = Menu::load(IDR_TRAY_MENU)?;
+        let popup_menu = menu.get_sub_menu()?;
+        Menu::set_default_item(popup_menu, MENU_SHOW_MAIN_WINDOW);
+
+        let mut cursor = POINT::default();
+        unsafe {
+            GetCursorPos(&mut cursor)?;
+            let _ = SetForegroundWindow(window);
+        }
+
+        let command = Menu::track_popup_menu(popup_menu, cursor.x, cursor.y, window);
+        match command {
+            MENU_SHOW_MAIN_WINDOW => Self::show_main_window(window),
+            MENU_ABOUT => self.show_about(window),
+            MENU_EXIT => unsafe { PostQuitMessage(0) },
+            _ => {}
+        };
+        Ok(())
+    }
+
+    fn show_main_window(window: HWND) {
+        unsafe {
+            let _ = ShowWindow(window, SW_RESTORE);
+            let _ = SetForegroundWindow(window);
+        }
+    }
+
+    fn show_about(&self, window: HWND) {
+        let title = format!("About {}", self.app_name);
+        let message = format!("{} {}", self.app_name, env!("CARGO_PKG_VERSION"));
+        unsafe {
+            MessageBoxW(
+                Some(window),
+                WideString::new(&message).as_pcwstr(),
+                WideString::new(&title).as_pcwstr(),
+                MB_OK | MB_ICONINFORMATION,
+            );
+        }
     }
 }
 
 impl Drop for TrayIcon {
     fn drop(&mut self) {
         unsafe {
-            Shell_NotifyIconW(NIM_DELETE, &self.data);
+            let _ = Shell_NotifyIconW(NIM_DELETE, &self.data);
         }
-    }
-}
-
-fn write_tip(buffer: &mut [u16; 128], tip: &str) {
-    let encoded = wide_null(tip);
-    let length = encoded.len().min(buffer.len());
-    buffer[..length].copy_from_slice(&encoded[..length]);
-    buffer[buffer.len() - 1] = 0;
-}
-
-fn tray_event(lparam: LPARAM) -> u32 {
-    (lparam as u32) & 0xffff
-}
-
-fn show_context_menu(window: HWND) {
-    let menu = unsafe { LoadMenuW(GetModuleHandleW(null()), IDR_TRAY_MENU as usize as _) };
-    if menu.is_null() {
-        return;
-    }
-
-    let popup_menu = unsafe { GetSubMenu(menu, 0) };
-    if popup_menu.is_null() {
-        unsafe { DestroyMenu(menu) };
-        return;
-    }
-
-    unsafe { SetMenuDefaultItem(popup_menu, MENU_SHOW_MAIN_WINDOW as u32, 0) };
-
-    let mut cursor = POINT { x: 0, y: 0 };
-    let command = unsafe {
-        if GetCursorPos(&mut cursor) == 0 {
-            DestroyMenu(menu);
-            return;
-        }
-
-        SetForegroundWindow(window);
-        TrackPopupMenu(
-            popup_menu,
-            TPM_RIGHTBUTTON | TPM_RETURNCMD,
-            cursor.x,
-            cursor.y,
-            0,
-            window,
-            null(),
-        )
-    };
-
-    unsafe {
-        DestroyMenu(menu);
-    }
-
-    match command as usize {
-        MENU_SHOW_MAIN_WINDOW => show_main_window(window),
-        MENU_ABOUT => show_about(window),
-        MENU_EXIT => unsafe { PostQuitMessage(0) },
-        _ => {}
-    }
-}
-
-fn show_main_window(window: HWND) {
-    unsafe {
-        ShowWindow(window, SW_RESTORE);
-        SetForegroundWindow(window);
-    }
-}
-
-fn show_about(window: HWND) {
-    let title = wide_null("About X-Desk");
-    let message = wide_null("X-Desk");
-
-    unsafe {
-        MessageBoxW(window, message.as_ptr(), title.as_ptr(), MB_OK | MB_ICONINFORMATION);
     }
 }

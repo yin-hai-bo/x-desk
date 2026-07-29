@@ -1,40 +1,26 @@
-use std::{ffi::OsString, io, os::windows::ffi::OsStringExt, path::PathBuf, ptr::null_mut};
+use std::{ffi::OsString, os::windows::ffi::OsStringExt, path::PathBuf};
 
-use windows_sys::Win32::{
+use windows::Win32::{
     System::Com::CoTaskMemFree,
     UI::Shell::{FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath},
 };
 
-pub mod hyperlink_text;
-pub mod main_window;
+pub(super) mod const_define;
+mod hyperlink_text;
+pub(super) mod main_window;
+mod menu;
+mod monitor;
 mod resource_ids;
 mod theme;
 mod tray_icon;
+mod wide_string;
+mod win_utils;
+pub(super) mod window;
 
-pub(crate) fn appdata_dir() -> io::Result<PathBuf> {
-    let mut path = null_mut();
-    let result =
-        unsafe { SHGetKnownFolderPath(&FOLDERID_RoamingAppData, KF_FLAG_DEFAULT as u32, null_mut(), &mut path) };
-    if result < 0 {
-        return Err(io::Error::other(format!(
-            "SHGetKnownFolderPath failed: 0x{:08x}",
-            result as u32
-        )));
-    }
-
-    let length = unsafe {
-        let mut length = 0;
-        while *path.add(length) != 0 {
-            length += 1;
-        }
-        length
-    };
-    let value = unsafe { OsString::from_wide(std::slice::from_raw_parts(path, length)) };
-    unsafe { CoTaskMemFree(path.cast()) };
-
-    Ok(PathBuf::from(value))
-}
-
-pub(crate) fn wide_null(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain(Some(0)).collect()
+pub(crate) fn appdata_dir() -> anyhow::Result<PathBuf> {
+    let path = unsafe { SHGetKnownFolderPath(&FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, None)? };
+    let ws = unsafe { path.as_wide() };
+    let os = OsString::from_wide(ws);
+    unsafe { CoTaskMemFree(Some(path.as_ptr() as *mut _)) };
+    Ok(PathBuf::from(os))
 }
