@@ -10,10 +10,9 @@ use windows::{
     core::BOOL,
 };
 
-struct Monitor {
-    is_primary: bool,
-    rect_monitor: RECT,
-    rect_work: RECT,
+pub struct Monitor {
+    pub is_primary: bool,
+    pub rect_work: RECT,
 }
 
 impl Monitor {
@@ -27,7 +26,6 @@ impl Monitor {
         }
         Ok(Self {
             is_primary: (info.dwFlags & MONITORINFOF_PRIMARY) != 0,
-            rect_monitor: info.rcMonitor.clone(),
             rect_work: info.rcWork.clone(),
         })
     }
@@ -46,7 +44,7 @@ impl MonitorManager {
         return TRUE;
     }
 
-    fn refresh_monitors() -> io::Result<Vec<Monitor>> {
+    pub fn refresh_monitors() -> io::Result<Vec<Monitor>> {
         let mut monitors: Vec<Monitor> = Vec::with_capacity(4);
         if FALSE
             == unsafe {

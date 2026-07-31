@@ -2,11 +2,28 @@ use std::ops::Deref;
 
 use windows::{
     Win32::{
-        Foundation::HWND,
+        Foundation::{HWND, RECT},
         Graphics::Gdi::{BeginPaint, EndPaint, HDC, HGDIOBJ, PAINTSTRUCT, SelectObject},
+        UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongPtrW, WINDOW_EX_STYLE},
     },
     core::{Error, HRESULT, Result},
 };
+
+pub fn width_of_rect(rect: &RECT) -> i32 {
+    rect.right - rect.left
+}
+
+pub fn height_of_rect(rect: &RECT) -> i32 {
+    rect.bottom - rect.top
+}
+
+pub fn has_hwnd_extended_style(hwnd: HWND, ex_style: WINDOW_EX_STYLE) -> bool {
+    if hwnd.is_invalid() {
+        return false;
+    }
+    let old = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) };
+    (old as u32) & ex_style.0 != 0
+}
 
 pub struct PaintDC {
     hwnd: HWND,

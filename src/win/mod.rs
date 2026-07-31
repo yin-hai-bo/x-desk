@@ -6,6 +6,8 @@ use windows::Win32::{
 };
 
 pub(super) mod const_define;
+pub(super) mod desktop;
+pub(super) mod dock;
 mod hyperlink_text;
 pub(super) mod main_window;
 mod menu;
@@ -13,6 +15,7 @@ mod monitor;
 mod resource_ids;
 mod theme;
 mod tray_icon;
+pub(super) mod wallpaper_manager;
 mod wide_string;
 mod win_utils;
 pub(super) mod window;

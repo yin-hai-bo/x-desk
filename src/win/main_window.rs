@@ -24,6 +24,7 @@ use windows::{
 };
 
 use crate::{
+    beacon::Beacon,
     config::Config,
     win::{
         const_define,
@@ -38,8 +39,8 @@ use crate::{
 
 const CLASS_NAME: PCWSTR = w!("YHB-XDeskMainWindow");
 
-#[derive(Default)]
-pub struct MainWindow {
+pub struct MainWindow<'a> {
+    _beacon: &'a Beacon,
     app_name: String,
     _config: Config,
     config_file_path: PathBuf,
@@ -47,16 +48,23 @@ pub struct MainWindow {
     config_dir_hyper_link: Option<Box<Window<HyperLinkText>>>,
 }
 
-impl MainWindow {
-    pub fn create(app_name: &str, config: Config, config_file_path: PathBuf) -> anyhow::Result<Box<Window<Self>>> {
+impl<'a> MainWindow<'a> {
+    pub fn create(
+        beacon: &'a Beacon,
+        app_name: &str,
+        config: Config,
+        config_file_path: PathBuf,
+    ) -> anyhow::Result<Box<Window<Self>>> {
         let instance = unsafe { GetModuleHandleW(PCWSTR::null())?.into() };
         Self::register_class(instance)?;
 
         let component = Self {
+            _beacon: beacon,
             app_name: app_name.to_string(),
             _config: config,
             config_file_path,
-            ..Default::default()
+            tray_icon: None,
+            config_dir_hyper_link: None,
         };
         let window = Self::create_window(instance, WideString::new(app_name).as_pcwstr(), component)?;
         Ok(window)
@@ -197,7 +205,7 @@ impl MainWindow {
     }
 }
 
-impl Window<MainWindow> {
+impl<'a> Window<MainWindow<'a>> {
     pub fn run(&mut self) -> anyhow::Result<()> {
         let hwnd = self.hwnd();
         self.component_mut().run(hwnd)
