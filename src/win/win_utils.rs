@@ -1,12 +1,17 @@
 use std::ops::Deref;
 
+use anyhow::{Context, Result, bail};
 use windows::{
     Win32::{
-        Foundation::{HWND, RECT},
+        Foundation::{COLORREF, HWND, LPARAM, RECT, TRUE},
         Graphics::Gdi::{BeginPaint, EndPaint, HDC, HGDIOBJ, PAINTSTRUCT, SelectObject},
-        UI::WindowsAndMessaging::{GWL_EXSTYLE, GetWindowLongPtrW, WINDOW_EX_STYLE},
+        UI::WindowsAndMessaging::{
+            EnumChildWindows, GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, LWA_ALPHA, SET_WINDOW_POS_FLAGS,
+            SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX,
+            WINDOW_STYLE, WS_EX_LAYERED,
+        },
     },
-    core::{Error, HRESULT, Result},
+    core::{BOOL, Error, HRESULT},
 };
 
 pub fn width_of_rect(rect: &RECT) -> i32 {
@@ -17,12 +22,88 @@ pub fn height_of_rect(rect: &RECT) -> i32 {
     rect.bottom - rect.top
 }
 
-pub fn has_hwnd_extended_style(hwnd: HWND, ex_style: WINDOW_EX_STYLE) -> bool {
+fn check_hwnd(hwnd: HWND) -> Result<()> {
     if hwnd.is_invalid() {
-        return false;
+        bail!("Invalid window");
     }
-    let old = unsafe { GetWindowLongPtrW(hwnd, GWL_EXSTYLE) };
-    (old as u32) & ex_style.0 != 0
+    Ok(())
+}
+
+pub fn get_window_long_ptr(hwnd: HWND, index: WINDOW_LONG_PTR_INDEX) -> Result<isize> {
+    check_hwnd(hwnd)?;
+    let result = unsafe { GetWindowLongPtrW(hwnd, index) };
+    Ok(result)
+}
+
+pub fn set_window_long_ptr(hwnd: HWND, index: WINDOW_LONG_PTR_INDEX, value: isize) -> Result<isize> {
+    check_hwnd(hwnd)?;
+    let result = unsafe { SetWindowLongPtrW(hwnd, index, value) };
+    Ok(result)
+}
+
+pub fn get_window_style(hwnd: HWND) -> Result<isize> {
+    get_window_long_ptr(hwnd, GWL_STYLE)
+}
+
+pub fn set_window_style(hwnd: HWND, style: WINDOW_STYLE) -> Result<isize> {
+    set_window_long_ptr(hwnd, GWL_STYLE, style.0 as isize)
+}
+
+pub fn get_window_ex_style(hwnd: HWND) -> Result<isize> {
+    get_window_long_ptr(hwnd, GWL_EXSTYLE)
+}
+
+pub fn set_window_ex_style(hwnd: HWND, ex_style: WINDOW_EX_STYLE) -> Result<isize> {
+    set_window_long_ptr(hwnd, GWL_EXSTYLE, ex_style.0 as isize)
+}
+
+pub fn add_window_style(hwnd: HWND, style_to_add: WINDOW_STYLE) -> Result<isize> {
+    let old = get_window_style(hwnd)?;
+    set_window_style(hwnd, style_to_add | WINDOW_STYLE(old as u32))
+}
+
+pub fn add_window_ex_style(hwnd: HWND, ex_style_to_add: WINDOW_EX_STYLE) -> Result<isize> {
+    let old = get_window_ex_style(hwnd)?;
+    set_window_ex_style(hwnd, ex_style_to_add | WINDOW_EX_STYLE(old as u32))
+}
+
+unsafe extern "system" fn get_last_child_window_callback(hwnd: HWND, param: LPARAM) -> BOOL {
+    let p = unsafe { &mut *(param.0 as *mut HWND) };
+    *p = hwnd;
+    return TRUE;
+}
+
+pub fn get_last_child_window(hwnd: Option<HWND>) -> Option<HWND> {
+    let mut result = HWND::default();
+    unsafe {
+        let _ = EnumChildWindows(
+            hwnd,
+            Some(get_last_child_window_callback),
+            LPARAM(&mut result as *mut HWND as isize),
+        );
+    }
+    if result.is_invalid() { None } else { Some(result) }
+}
+
+pub fn set_window_transparency(hwnd: HWND, transparency: u8) -> Result<()> {
+    let ex_style = WINDOW_EX_STYLE(get_window_ex_style(hwnd)? as u32);
+    if !ex_style.contains(WS_EX_LAYERED) {
+        let _ = set_window_ex_style(hwnd, WS_EX_LAYERED | ex_style);
+    }
+    unsafe { SetLayeredWindowAttributes(hwnd, COLORREF(0), transparency, LWA_ALPHA) }
+        .context("SetLayeredWindowAttributes() failed")
+}
+
+pub fn set_window_pos(
+    hwnd: HWND,
+    insert_after: Option<HWND>,
+    x: i32,
+    y: i32,
+    cx: i32,
+    cy: i32,
+    flags: SET_WINDOW_POS_FLAGS,
+) -> Result<()> {
+    unsafe { SetWindowPos(hwnd, insert_after, x, y, cx, cy, flags).context("SetWindowPos() failed") }
 }
 
 pub struct PaintDC {
@@ -36,7 +117,7 @@ impl PaintDC {
         let mut ps = unsafe { std::mem::zeroed::<PAINTSTRUCT>() };
         let dc = unsafe { BeginPaint(hwnd, &mut ps) };
         if dc.is_invalid() {
-            return Err(Error::from_thread());
+            return Err(Error::from_thread().into());
         }
         Ok(Self { hwnd, dc, ps })
     }
@@ -76,11 +157,11 @@ where
     pub fn select_to_hdc(hdc: HDC, h: T) -> Result<Self> {
         let new_obj = h.into();
         if new_obj.is_invalid() {
-            return Err(Error::new(HRESULT::from_thread(), "Invalid GDI object"));
+            return Err(windows::core::Error::new(HRESULT::from_thread(), "Invalid GDI Object").into());
         }
         let old_obj = unsafe { SelectObject(hdc, h.into()) };
         if old_obj.is_invalid() {
-            return Err(Error::from_thread());
+            return Err(Error::from_thread().into());
         }
         Ok(Self { hdc, old_obj, h })
     }

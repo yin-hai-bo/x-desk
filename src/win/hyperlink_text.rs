@@ -19,7 +19,11 @@ use windows::{
     core::{Owned, PCWSTR, w},
 };
 
-use crate::win::{wide_string::WideString, win_utils::PaintDC, window::Window};
+use crate::win::{
+    wide_string::WideString,
+    win_utils::{self, PaintDC},
+    window::Window,
+};
 
 use super::theme;
 
@@ -98,8 +102,8 @@ impl HyperLinkText {
             WS_CHILD | WS_VISIBLE,
             bounds.left,
             bounds.top,
-            bounds.right - bounds.left,
-            bounds.bottom - bounds.top,
+            win_utils::width_of_rect(&bounds),
+            win_utils::height_of_rect(&bounds),
             Some(parent),
             None,
             Some(instance.into()),
@@ -231,8 +235,8 @@ fn autosize_bounds(hwnd: HWND, text: &str, anchor: Anchor, font: HFONT) -> anyho
             SelectObject(dc, old_font);
         }
 
-        let width = (text_bounds.right - text_bounds.left).max(1);
-        let height = (text_bounds.bottom - text_bounds.top).max(1);
+        let width = win_utils::width_of_rect(&text_bounds).max(1);
+        let height = win_utils::height_of_rect(&text_bounds).max(1);
         let left = match anchor.horizontal {
             HorizontalAnchor::Left(x) => x,
             HorizontalAnchor::Center(x) => x - width / 2,

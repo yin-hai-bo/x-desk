@@ -5,20 +5,20 @@ use windows::Win32::{
     UI::Shell::{FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath},
 };
 
-pub(super) mod const_define;
-pub(super) mod desktop;
-pub(super) mod dock;
-mod hyperlink_text;
-pub(super) mod main_window;
-mod menu;
-mod monitor;
-mod resource_ids;
-mod theme;
-mod tray_icon;
-pub(super) mod wallpaper_manager;
-mod wide_string;
-mod win_utils;
-pub(super) mod window;
+pub mod const_define;
+pub mod desktop;
+pub mod dock;
+pub mod hyperlink_text;
+pub mod main_window;
+pub mod menu;
+pub mod monitor;
+pub mod resource_ids;
+pub mod theme;
+pub mod tray_icon;
+pub mod wallpaper_manager;
+pub mod wide_string;
+pub mod win_utils;
+pub mod window;
 
 pub(crate) fn appdata_dir() -> anyhow::Result<PathBuf> {
     let path = unsafe { SHGetKnownFolderPath(&FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, None)? };

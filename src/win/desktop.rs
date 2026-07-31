@@ -4,8 +4,8 @@ use windows::{
     Win32::{
         Foundation::{HWND, LPARAM, TRUE, WPARAM},
         UI::WindowsAndMessaging::{
-            EnumWindows, FindWindowExW, FindWindowW, GetDesktopWindow, SMTO_NORMAL, SendMessageTimeoutW,
-            WS_EX_NOREDIRECTIONBITMAP,
+            EnumWindows, FindWindowExW, FindWindowW, GetDesktopWindow, HWND_BOTTOM, SMTO_NORMAL, SWP_NOACTIVATE,
+            SWP_NOMOVE, SWP_NOSIZE, SendMessageTimeoutW, WS_EX_NOREDIRECTIONBITMAP,
         },
     },
     core::{BOOL, PCWSTR, w},
@@ -77,7 +77,7 @@ pub struct Desktop {
 impl Desktop {
     pub fn new() -> Result<Self> {
         let progman = unsafe { FindWindowW(PROGMAN_NAME, PCWSTR::null()) }.context("Find 'Progman' failed")?;
-        let is_raised_desktop = win_utils::has_hwnd_extended_style(progman, WS_EX_NOREDIRECTIONBITMAP);
+        let is_raised_desktop = (win_utils::get_window_ex_style(progman)? & WS_EX_NOREDIRECTIONBITMAP.0 as isize) != 0;
         unsafe {
             let _ = SendMessageTimeoutW(progman, 0x052c, WPARAM(13), LPARAM(1), SMTO_NORMAL, 1000, None);
         }
@@ -101,6 +101,38 @@ impl Desktop {
             self.progman
         } else {
             self.worker_w
+        }
+    }
+
+    pub fn is_raised_desktop(&self) -> bool {
+        self.is_raised_desktop
+    }
+
+    pub fn shell_dll_def_view(&self) -> HWND {
+        self.shell_dll_def_view
+    }
+
+    pub fn worker_w(&self) -> HWND {
+        self.worker_w
+    }
+
+    pub fn ensure_workerw_zorder(&self) {
+        if !self.is_raised_desktop {
+            return;
+        }
+        if let Some(last_child) = win_utils::get_last_child_window(Some(self.progman)) {
+            if last_child == self.worker_w {
+                return;
+            }
+            let _ = win_utils::set_window_pos(
+                self.worker_w,
+                Some(HWND_BOTTOM),
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
         }
     }
 }
