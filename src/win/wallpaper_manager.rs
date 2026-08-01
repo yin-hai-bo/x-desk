@@ -9,7 +9,11 @@ use crate::{
 };
 use anyhow::{Context, Result, anyhow, bail};
 use windows::Win32::{
-    Foundation::{HWND, POINT, RECT}, Graphics::Gdi::{InvalidateRect, MapWindowPoints, UpdateWindow}, UI::WindowsAndMessaging::{HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetParent},
+    Foundation::{HWND, POINT, RECT},
+    Graphics::Gdi::{InvalidateRect, MapWindowPoints, UpdateWindow},
+    UI::WindowsAndMessaging::{
+        HWND_BOTTOM, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER, SWP_SHOWWINDOW, SetParent,
+    },
 };
 
 pub struct WallpaperManager<'a> {
@@ -40,10 +44,7 @@ impl<'a> WallpaperManager<'a> {
         let monitors = MonitorManager::refresh_monitors()?;
         for (index, monitor) in monitors.iter().enumerate() {
             if let Some(video_url) = f(index) {
-                match self
-                    .dock_list
-                    .get_or_create(index, parent_of_wallpaper, monitor.rect())
-                {
+                match self.dock_list.get_or_create(index, parent_of_wallpaper, monitor.rect()) {
                     Ok(dock) => {
                         log::info!("Create dock success, index={}", index);
                         Self::set_wallpaper(desktop, dock, monitor.rect(), &video_url);
@@ -100,7 +101,14 @@ impl<'a> WallpaperManager<'a> {
             height_of_rect(rc),
             SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOZORDER,
         );
-        log::info!("{}: pos=({},{}), size={}x{}", dock.name(), pt[0].x, pt[0].y, width_of_rect(rc), height_of_rect(rc));
+        log::info!(
+            "{}: pos=({},{}), size={}x{}",
+            dock.name(),
+            pt[0].x,
+            pt[0].y,
+            width_of_rect(rc),
+            height_of_rect(rc)
+        );
 
         unsafe {
             let _ = InvalidateRect(Some(dock.hwnd()), None, true);

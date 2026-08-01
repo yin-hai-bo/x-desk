@@ -19,8 +19,9 @@ fn main() {
 
 #[cfg(target_os = "windows")]
 fn run() -> anyhow::Result<()> {
-
-    unsafe { let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2); }
+    unsafe {
+        let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    }
 
     let beacon = Beacon::new();
     let config_file_path = Config::config_file_path(APP_NAME)?;

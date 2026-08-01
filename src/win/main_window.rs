@@ -10,6 +10,7 @@ use windows::{
         Graphics::Gdi::{HBRUSH, HDC, UpdateWindow},
         System::LibraryLoader::GetModuleHandleW,
         UI::{
+            HiDpi::{GetDpiForSystem, GetDpiForWindow},
             Shell::ShellExecuteW,
             WindowsAndMessaging::{
                 CS_HREDRAW, CS_VREDRAW, DefWindowProcW, DispatchMessageW, GetClientRect, GetMessageW, GetSystemMetrics,
@@ -38,6 +39,11 @@ use crate::{
 };
 
 const CLASS_NAME: PCWSTR = w!("YHB-XDeskMainWindow");
+const DEFAULT_WINDOW_WIDTH: i32 = 480;
+const DEFAULT_WINDOW_HEIGHT: i32 = 320;
+const CONFIG_LINK_MARGIN_RIGHT: i32 = 24;
+const CONFIG_LINK_MARGIN_BOTTOM: i32 = 16;
+const DEFAULT_DPI: u32 = 96;
 
 pub struct MainWindow<'a> {
     _beacon: &'a Beacon,
@@ -123,8 +129,9 @@ impl<'a> MainWindow<'a> {
     }
 
     fn create_window(instance: HINSTANCE, title: PCWSTR, component: Self) -> anyhow::Result<Box<Window<Self>>> {
-        let window_width = 480;
-        let window_height = 320;
+        let dpi = unsafe { GetDpiForSystem() };
+        let window_width = Self::scale_for_dpi(DEFAULT_WINDOW_WIDTH, dpi);
+        let window_height = Self::scale_for_dpi(DEFAULT_WINDOW_HEIGHT, dpi);
         let screen_width = unsafe { GetSystemMetrics(SM_CXSCREEN) };
         let screen_height = unsafe { GetSystemMetrics(SM_CYSCREEN) };
         let window_x = (screen_width - window_width) / 2;
@@ -146,6 +153,10 @@ impl<'a> MainWindow<'a> {
         .context("CreateWindowEx() failed")
     }
 
+    fn scale_for_dpi(value: i32, dpi: u32) -> i32 {
+        (value * dpi.max(DEFAULT_DPI) as i32 + (DEFAULT_DPI as i32 / 2)) / DEFAULT_DPI as i32
+    }
+
     fn create_config_dir_hyper_link(&self, hwnd: HWND) -> anyhow::Result<Box<Window<HyperLinkText>>> {
         let dir = self
             .config_file_path
@@ -154,12 +165,15 @@ impl<'a> MainWindow<'a> {
             .to_path_buf();
         let mut client_rect = RECT::default();
         unsafe { GetClientRect(hwnd, &mut client_rect)? };
+        let dpi = unsafe { GetDpiForWindow(hwnd) };
+        let margin_right = Self::scale_for_dpi(CONFIG_LINK_MARGIN_RIGHT, dpi);
+        let margin_bottom = Self::scale_for_dpi(CONFIG_LINK_MARGIN_BOTTOM, dpi);
         HyperLinkText::create(
             hwnd,
             "Open configuration directory",
             Anchor::new(
-                HorizontalAnchor::Right(client_rect.right - 24),
-                VerticalAnchor::Bottom(client_rect.bottom - 16),
+                HorizontalAnchor::Right(client_rect.right - margin_right),
+                VerticalAnchor::Bottom(client_rect.bottom - margin_bottom),
             ),
             HyperLinkFont::new("Segoe UI", 12),
             Some(move || Self::open_dir(&dir)),
