@@ -7,21 +7,17 @@ use anyhow::Result;
 use windows::{
     Win32::{
         Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM},
-        Graphics::Gdi::{BLACK_BRUSH, FillRect, GetStockObject, HBRUSH},
+        Graphics::Gdi::{BLACK_BRUSH, GetStockObject, HBRUSH},
         System::LibraryLoader::GetModuleHandleW,
         UI::WindowsAndMessaging::{
-            DefWindowProcW, GetClientRect, RegisterClassExW, WM_NCCREATE, WM_NCDESTROY, WM_PAINT, WNDCLASSEXW,
-            WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_VISIBLE,
+            DefWindowProcW, RegisterClassExW, WM_NCCREATE, WM_NCDESTROY, WNDCLASSEXW, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
+            WS_EX_NOACTIVATE, WS_POPUP,
         },
     },
     core::{PCWSTR, w},
 };
 
-use crate::win::{
-    wide_string::WideString,
-    win_utils::{self, PaintDC},
-    window::Window,
-};
+use crate::win::{wide_string::WideString, win_utils, window::Window};
 
 const DOCK_CLASS_NAME: PCWSTR = w!("X-Desk-Dock-Class");
 static DOCK_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
@@ -40,23 +36,20 @@ impl Dock {
         &self.name
     }
 
-    /// 创建实例
-    ///
-    /// # Parameters
-    /// - parent 父窗口的 HWND，一般是桌面的 workerW 等。
-    pub fn create(name: String, parent: HWND, rect: &RECT) -> Result<Box<Window<Dock>>> {
+    pub fn create(name: String, rect: &RECT) -> Result<Box<Window<Dock>>> {
         let inst = unsafe { GetModuleHandleW(PCWSTR::null()) }?.into();
         Self::register_class(inst)?;
         Window::create(
-            WS_EX_NOACTIVATE,
+            WS_EX_NOACTIVATE, // Do not use WS_EX_LAYERED，it's used only when "Raised Desktop"
             DOCK_CLASS_NAME,
             WideString::new(&name).as_pcwstr(),
-            WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+            // Do not set WS_CHILD for now, because if WS_EX_LAYERED needs to be set later, the window muse be a top-level window
+            WS_POPUP | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
             rect.left,
             rect.top,
             win_utils::width_of_rect(rect),
             win_utils::height_of_rect(rect),
-            Some(parent),
+            None,
             None,
             Some(inst),
             Dock::new(name),
@@ -89,16 +82,6 @@ impl Dock {
         match msg {
             WM_NCCREATE => Window::<Dock>::on_wm_nccreate(hwnd, lparam),
             WM_NCDESTROY => Window::<Dock>::on_wm_ncdestroy(hwnd),
-            WM_PAINT => {
-                if let Ok(dc) = PaintDC::new(hwnd) {
-                    let mut rc = RECT::default();
-                    unsafe {
-                        let _ = GetClientRect(hwnd, &mut rc);
-                        let _ = FillRect(*dc, &rc, HBRUSH(GetStockObject(BLACK_BRUSH).0));
-                    }
-                }
-                return LRESULT(0);
-            }
             _ => {}
         }
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }

@@ -7,8 +7,8 @@ use windows::{
         Graphics::Gdi::{BeginPaint, EndPaint, HDC, HGDIOBJ, PAINTSTRUCT, SelectObject},
         UI::WindowsAndMessaging::{
             EnumChildWindows, GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, LWA_ALPHA, SET_WINDOW_POS_FLAGS,
-            SetLayeredWindowAttributes, SetWindowLongPtrW, SetWindowPos, WINDOW_EX_STYLE, WINDOW_LONG_PTR_INDEX,
-            WINDOW_STYLE, WS_EX_LAYERED,
+            SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos, WINDOW_EX_STYLE,
+            WINDOW_LONG_PTR_INDEX, WINDOW_STYLE, WS_EX_LAYERED,
         },
     },
     core::{BOOL, Error, HRESULT},
@@ -41,36 +41,69 @@ pub fn set_window_long_ptr(hwnd: HWND, index: WINDOW_LONG_PTR_INDEX, value: isiz
     Ok(result)
 }
 
-pub fn get_window_style(hwnd: HWND) -> Result<isize> {
-    get_window_long_ptr(hwnd, GWL_STYLE)
+pub fn get_window_style(hwnd: HWND) -> Result<WINDOW_STYLE> {
+    get_window_long_ptr(hwnd, GWL_STYLE).map(|r| WINDOW_STYLE(r as u32))
 }
 
-pub fn set_window_style(hwnd: HWND, style: WINDOW_STYLE) -> Result<isize> {
-    set_window_long_ptr(hwnd, GWL_STYLE, style.0 as isize)
+pub fn set_window_style(hwnd: HWND, style: WINDOW_STYLE) -> Result<WINDOW_STYLE> {
+    set_window_long_ptr(hwnd, GWL_STYLE, style.0 as isize).map(|r| WINDOW_STYLE(r as u32))
 }
 
-pub fn get_window_ex_style(hwnd: HWND) -> Result<isize> {
-    get_window_long_ptr(hwnd, GWL_EXSTYLE)
+pub fn get_window_ex_style(hwnd: HWND) -> Result<WINDOW_EX_STYLE> {
+    get_window_long_ptr(hwnd, GWL_EXSTYLE).map(|r| WINDOW_EX_STYLE(r as u32))
 }
 
-pub fn set_window_ex_style(hwnd: HWND, ex_style: WINDOW_EX_STYLE) -> Result<isize> {
-    set_window_long_ptr(hwnd, GWL_EXSTYLE, ex_style.0 as isize)
+pub fn set_window_ex_style(hwnd: HWND, ex_style: WINDOW_EX_STYLE) -> Result<WINDOW_EX_STYLE> {
+    set_window_long_ptr(hwnd, GWL_EXSTYLE, ex_style.0 as isize).map(|r| WINDOW_EX_STYLE(r as u32))
 }
 
-pub fn add_window_style(hwnd: HWND, style_to_add: WINDOW_STYLE) -> Result<isize> {
+pub fn add_window_style(hwnd: HWND, style_to_add: WINDOW_STYLE) -> Result<WINDOW_STYLE> {
     let old = get_window_style(hwnd)?;
-    set_window_style(hwnd, style_to_add | WINDOW_STYLE(old as u32))
+    set_window_style(hwnd, old | style_to_add)
 }
 
-pub fn add_window_ex_style(hwnd: HWND, ex_style_to_add: WINDOW_EX_STYLE) -> Result<isize> {
+pub fn add_window_ex_style(hwnd: HWND, ex_style_to_add: WINDOW_EX_STYLE) -> Result<WINDOW_EX_STYLE> {
     let old = get_window_ex_style(hwnd)?;
-    set_window_ex_style(hwnd, ex_style_to_add | WINDOW_EX_STYLE(old as u32))
+    set_window_ex_style(hwnd, old | ex_style_to_add)
 }
 
 unsafe extern "system" fn get_last_child_window_callback(hwnd: HWND, param: LPARAM) -> BOOL {
     let p = unsafe { &mut *(param.0 as *mut HWND) };
     *p = hwnd;
     return TRUE;
+}
+
+pub struct ChildWindowInfo {
+    pub first_child: Option<HWND>,
+    pub last_child: Option<HWND>,
+}
+
+unsafe extern "system" fn get_first_and_last_child_window_callback(hwnd: HWND, param: LPARAM) -> BOOL {
+    let info = unsafe { &mut *(param.0 as *mut ChildWindowInfo) };
+    if info.first_child.is_none() {
+        info.first_child = Some(hwnd);
+    }
+    info.last_child = Some(hwnd);
+    TRUE
+}
+
+pub fn get_first_and_last_child_window(hwnd: Option<HWND>) -> Option<ChildWindowInfo> {
+    let mut info = ChildWindowInfo {
+        first_child: None,
+        last_child: None,
+    };
+    unsafe {
+        let _ = EnumChildWindows(
+            hwnd,
+            Some(get_first_and_last_child_window_callback),
+            LPARAM(&mut info as *mut ChildWindowInfo as isize),
+        );
+    }
+    if info.first_child.is_none() && info.last_child.is_none() {
+        None
+    } else {
+        Some(info)
+    }
 }
 
 pub fn get_last_child_window(hwnd: Option<HWND>) -> Option<HWND> {
@@ -86,12 +119,17 @@ pub fn get_last_child_window(hwnd: Option<HWND>) -> Option<HWND> {
 }
 
 pub fn set_window_transparency(hwnd: HWND, transparency: u8) -> Result<()> {
-    let ex_style = WINDOW_EX_STYLE(get_window_ex_style(hwnd)? as u32);
-    if !ex_style.contains(WS_EX_LAYERED) {
-        let _ = set_window_ex_style(hwnd, WS_EX_LAYERED | ex_style);
-    }
+    set_window_layered(hwnd)?;
     unsafe { SetLayeredWindowAttributes(hwnd, COLORREF(0), transparency, LWA_ALPHA) }
         .context("SetLayeredWindowAttributes() failed")
+}
+
+pub fn set_window_layered(hwnd: HWND) -> Result<()> {
+    let ex_style = get_window_ex_style(hwnd)?;
+    if !ex_style.contains(WS_EX_LAYERED) {
+        set_window_ex_style(hwnd, WS_EX_LAYERED | ex_style)?;
+    }
+    Ok(())
 }
 
 pub fn set_window_pos(
@@ -104,6 +142,10 @@ pub fn set_window_pos(
     flags: SET_WINDOW_POS_FLAGS,
 ) -> Result<()> {
     unsafe { SetWindowPos(hwnd, insert_after, x, y, cx, cy, flags).context("SetWindowPos() failed") }
+}
+
+pub fn set_parent(hwnd: HWND, parent: Option<HWND>) -> Result<HWND> {
+    unsafe { SetParent(hwnd, parent).context("SetParent() failed") }
 }
 
 pub struct PaintDC {

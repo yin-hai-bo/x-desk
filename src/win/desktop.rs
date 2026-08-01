@@ -4,8 +4,8 @@ use windows::{
     Win32::{
         Foundation::{HWND, LPARAM, TRUE, WPARAM},
         UI::WindowsAndMessaging::{
-            EnumWindows, FindWindowExW, FindWindowW, GetDesktopWindow, HWND_BOTTOM, SMTO_NORMAL, SWP_NOACTIVATE,
-            SWP_NOMOVE, SWP_NOSIZE, SendMessageTimeoutW, WS_EX_NOREDIRECTIONBITMAP,
+            EnumWindows, FindWindowExW, FindWindowW, GetDesktopWindow, HWND_BOTTOM, HWND_TOP, SMTO_NORMAL,
+            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SendMessageTimeoutW, WS_EX_NOREDIRECTIONBITMAP,
         },
     },
     core::{BOOL, PCWSTR, w},
@@ -77,7 +77,7 @@ pub struct Desktop {
 impl Desktop {
     pub fn new() -> Result<Self> {
         let progman = unsafe { FindWindowW(PROGMAN_NAME, PCWSTR::null()) }.context("Find 'Progman' failed")?;
-        let is_raised_desktop = (win_utils::get_window_ex_style(progman)? & WS_EX_NOREDIRECTIONBITMAP.0 as isize) != 0;
+        let is_raised_desktop = win_utils::get_window_ex_style(progman)?.contains(WS_EX_NOREDIRECTIONBITMAP);
         unsafe {
             let _ = SendMessageTimeoutW(progman, 0x052c, WPARAM(13), LPARAM(1), SMTO_NORMAL, 1000, None);
         }
@@ -116,23 +116,36 @@ impl Desktop {
         self.worker_w
     }
 
-    pub fn ensure_workerw_zorder(&self) {
+    pub fn ensure_children_zorder(&self) -> Result<()> {
         if !self.is_raised_desktop {
-            return;
+            return Ok(());
         }
-        if let Some(last_child) = win_utils::get_last_child_window(Some(self.progman)) {
-            if last_child == self.worker_w {
-                return;
+        if let Some(info) = win_utils::get_first_and_last_child_window(Some(self.progman)) {
+            if info.last_child != Some(self.worker_w) {
+                win_utils::set_window_pos(
+                    self.worker_w,
+                    Some(HWND_BOTTOM),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                )?;
             }
-            let _ = win_utils::set_window_pos(
-                self.worker_w,
-                Some(HWND_BOTTOM),
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
-            );
+            if info.first_child != Some(self.shell_dll_def_view) {
+                win_utils::set_window_pos(
+                    self.shell_dll_def_view,
+                    Some(HWND_TOP),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                )?;
+            }
+            Ok(())
+        } else {
+            Ok(())
         }
     }
 }
