@@ -57,22 +57,6 @@ pub fn set_window_ex_style(hwnd: HWND, ex_style: WINDOW_EX_STYLE) -> Result<WIND
     set_window_long_ptr(hwnd, GWL_EXSTYLE, ex_style.0 as isize).map(|r| WINDOW_EX_STYLE(r as u32))
 }
 
-pub fn add_window_style(hwnd: HWND, style_to_add: WINDOW_STYLE) -> Result<WINDOW_STYLE> {
-    let old = get_window_style(hwnd)?;
-    set_window_style(hwnd, old | style_to_add)
-}
-
-pub fn add_window_ex_style(hwnd: HWND, ex_style_to_add: WINDOW_EX_STYLE) -> Result<WINDOW_EX_STYLE> {
-    let old = get_window_ex_style(hwnd)?;
-    set_window_ex_style(hwnd, old | ex_style_to_add)
-}
-
-unsafe extern "system" fn get_last_child_window_callback(hwnd: HWND, param: LPARAM) -> BOOL {
-    let p = unsafe { &mut *(param.0 as *mut HWND) };
-    *p = hwnd;
-    return TRUE;
-}
-
 pub struct ChildWindowInfo {
     pub first_child: Option<HWND>,
     pub last_child: Option<HWND>,
@@ -104,18 +88,6 @@ pub fn get_first_and_last_child_window(hwnd: Option<HWND>) -> Option<ChildWindow
     } else {
         Some(info)
     }
-}
-
-pub fn get_last_child_window(hwnd: Option<HWND>) -> Option<HWND> {
-    let mut result = HWND::default();
-    unsafe {
-        let _ = EnumChildWindows(
-            hwnd,
-            Some(get_last_child_window_callback),
-            LPARAM(&mut result as *mut HWND as isize),
-        );
-    }
-    if result.is_invalid() { None } else { Some(result) }
 }
 
 pub fn set_window_transparency(hwnd: HWND, transparency: u8) -> Result<()> {

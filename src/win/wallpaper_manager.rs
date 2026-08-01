@@ -60,7 +60,7 @@ impl<'a> WallpaperManager<'a> {
         Ok(())
     }
 
-    fn set_wallpaper(desktop: &Desktop, dock: &mut Box<Window<Dock>>, rc: &RECT, _video_url: &str) -> Result<()> {
+    fn set_wallpaper(desktop: &Desktop, dock: &mut Box<Window<Dock>>, rc: &RECT, video_url: &str) -> Result<()> {
         let dock_hwnd = dock.hwnd();
         win_utils::set_window_pos(
             dock_hwnd,
@@ -103,14 +103,20 @@ impl<'a> WallpaperManager<'a> {
             height_of_rect(rc),
             SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOZORDER,
         )?;
+        dock.component_mut()
+            .set_video_source(dock_hwnd, video_url)
+            .context("Set dock video source failed")?;
+
         log::info!(
-            "{}: pos=({},{}), size={}x{}",
+            "{}: pos=({},{}), size={}x{}, video: {}",
             dock.name(),
             pt[0].x,
             pt[0].y,
             width_of_rect(rc),
-            height_of_rect(rc)
+            height_of_rect(rc),
+            video_url
         );
+
         Ok(())
     }
 

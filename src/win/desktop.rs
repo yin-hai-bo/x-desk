@@ -112,10 +112,6 @@ impl Desktop {
         self.shell_dll_def_view
     }
 
-    pub fn worker_w(&self) -> HWND {
-        self.worker_w
-    }
-
     pub fn ensure_children_zorder(&self) -> Result<()> {
         if !self.is_raised_desktop {
             return Ok(());

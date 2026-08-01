@@ -10,14 +10,14 @@ use windows::{
         Graphics::Gdi::{BLACK_BRUSH, GetStockObject, HBRUSH},
         System::LibraryLoader::GetModuleHandleW,
         UI::WindowsAndMessaging::{
-            DefWindowProcW, RegisterClassExW, WM_NCCREATE, WM_NCDESTROY, WNDCLASSEXW, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
-            WS_EX_NOACTIVATE, WS_POPUP,
+            DefWindowProcW, RegisterClassExW, WM_NCCREATE, WM_NCDESTROY, WM_SIZE, WNDCLASSEXW, WS_CLIPCHILDREN,
+            WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_POPUP,
         },
     },
     core::{PCWSTR, w},
 };
 
-use crate::win::{wide_string::WideString, win_utils, window::Window};
+use crate::win::{video_host::VideoHost, wide_string::WideString, win_utils, window::Window};
 
 const DOCK_CLASS_NAME: PCWSTR = w!("X-Desk-Dock-Class");
 static DOCK_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
@@ -25,15 +25,37 @@ static DOCK_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
 /// 挂接在桌面的窗口，在这个窗口里可进行图片显示、视频渲染等，从而显示特殊的 Wallpaper
 pub(super) struct Dock {
     name: String,
+    video_host: Option<Box<Window<VideoHost>>>,
 }
 
 impl Dock {
     pub fn new(name: String) -> Self {
-        Self { name }
+        Self { name, video_host: None }
     }
 
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    pub fn set_video_source(&mut self, hwnd: HWND, source: &str) -> Result<()> {
+        match self.video_host.as_mut() {
+            Some(video_host) => {
+                let video_host_hwnd = video_host.hwnd();
+                video_host.component_mut().set_source(video_host_hwnd, source)
+            }
+            None => {
+                self.video_host = Some(VideoHost::create(hwnd, source)?);
+                Ok(())
+            }
+        }
+    }
+
+    fn resize_video_host(&self, hwnd: HWND) {
+        if let Some(video_host) = &self.video_host {
+            if let Err(e) = video_host.resize_to_parent(video_host.hwnd(), hwnd) {
+                log::error!("Resize video host failed: {}", e);
+            }
+        }
     }
 
     pub fn create(name: String, rect: &RECT) -> Result<Box<Window<Dock>>> {
@@ -82,6 +104,12 @@ impl Dock {
         match msg {
             WM_NCCREATE => Window::<Dock>::on_wm_nccreate(hwnd, lparam),
             WM_NCDESTROY => Window::<Dock>::on_wm_ncdestroy(hwnd),
+            WM_SIZE => {
+                if let Some(p) = unsafe { Window::<Dock>::get_self_from_hwnd(hwnd) } {
+                    let window = unsafe { &*p };
+                    window.component().resize_video_host(hwnd);
+                }
+            }
             _ => {}
         }
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }

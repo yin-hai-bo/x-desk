@@ -10,7 +10,7 @@ use crate::win;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct MonitorConfig {
-    url: String,
+    video_url: String,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -19,6 +19,13 @@ pub struct Config {
 }
 
 impl Config {
+    pub fn video_url_for_monitor(&self, index: usize) -> Option<&str> {
+        self.monitors
+            .get(index)
+            .map(|monitor| monitor.video_url.trim())
+            .filter(|url| !url.is_empty())
+    }
+
     pub fn load_from_file<P>(path: &P) -> anyhow::Result<Self>
     where
         P: AsRef<Path>,
@@ -61,4 +68,47 @@ fn current_exe_dir() -> anyhow::Result<PathBuf> {
     path.parent()
         .map(PathBuf::from)
         .context("Get application directory failed.")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Config, MonitorConfig};
+
+    #[test]
+    fn monitor_index_maps_to_monitor_url() {
+        let config = Config {
+            monitors: vec![
+                MonitorConfig {
+                    video_url: "C:\\videos\\one.mp4".to_string(),
+                },
+                MonitorConfig {
+                    video_url: "C:\\videos\\two.mp4".to_string(),
+                },
+            ],
+        };
+
+        assert_eq!(config.video_url_for_monitor(1), Some("C:\\videos\\two.mp4"));
+    }
+
+    #[test]
+    fn empty_monitor_url_is_disabled() {
+        let config = Config {
+            monitors: vec![MonitorConfig {
+                video_url: "   ".to_string(),
+            }],
+        };
+
+        assert_eq!(config.video_url_for_monitor(0), None);
+    }
+
+    #[test]
+    fn out_of_range_monitor_url_is_disabled() {
+        let config = Config {
+            monitors: vec![MonitorConfig {
+                video_url: "C:\\videos\\one.mp4".to_string(),
+            }],
+        };
+
+        assert_eq!(config.video_url_for_monitor(1), None);
+    }
 }
