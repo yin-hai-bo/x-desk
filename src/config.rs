@@ -38,7 +38,7 @@ impl Config {
         }
 
         let content = fs::read_to_string(path)?;
-        let config: Config = serde_json::from_str(&content)?;
+        let config: Config = toml::from_str(&content)?;
         Ok(config)
     }
 
@@ -47,7 +47,7 @@ impl Config {
             fs::create_dir_all(parent)?;
         }
 
-        let content = serde_json::to_string_pretty(default_config)?;
+        let content = toml::to_string_pretty(default_config)?;
         fs::write(path, content).context("Write configuration file failed")
     }
 
@@ -58,7 +58,7 @@ impl Config {
         #[cfg(not(target_os = "windows"))]
         let dir = current_exe_dir()?;
 
-        Ok(dir.join("config.json"))
+        Ok(dir.join("config.toml"))
     }
 }
 
@@ -73,6 +73,7 @@ fn current_exe_dir() -> anyhow::Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{Config, MonitorConfig};
+    use std::{fs, path::PathBuf};
 
     #[test]
     fn monitor_index_maps_to_monitor_url() {
@@ -110,5 +111,37 @@ mod tests {
         };
 
         assert_eq!(config.video_url_for_monitor(1), None);
+    }
+
+    #[test]
+    fn load_from_file_reads_toml_config() {
+        let path = temp_config_path();
+        fs::write(
+            &path,
+            r#"
+[[monitors]]
+video_url = "C:\\videos\\one.mp4"
+
+[[monitors]]
+video_url = "C:\\videos\\two.mp4"
+"#,
+        )
+        .unwrap();
+
+        let config = Config::load_from_file(&path).unwrap();
+
+        assert_eq!(config.video_url_for_monitor(0), Some("C:\\videos\\one.mp4"));
+        assert_eq!(config.video_url_for_monitor(1), Some("C:\\videos\\two.mp4"));
+        let _ = fs::remove_file(path);
+    }
+
+    fn temp_config_path() -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "x-desk-config-test-{}.toml",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ))
     }
 }
