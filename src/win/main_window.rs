@@ -15,9 +15,9 @@ use windows::{
             WindowsAndMessaging::{
                 CS_HREDRAW, CS_VREDRAW, DefWindowProcW, DispatchMessageW, GetClientRect, GetMessageW, GetSystemMetrics,
                 IDC_ARROW, LoadCursorW, LoadIconW, MSG, PostQuitMessage, RegisterClassExW, SM_CXSCREEN, SM_CYSCREEN,
-                SW_SHOW, SW_SHOWNORMAL, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_DESTROY, WM_ERASEBKGND,
-                WM_NCCREATE, WM_NCDESTROY, WM_SETTINGCHANGE, WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED,
-                WS_SYSMENU,
+                SW_HIDE, SW_MINIMIZE, SW_SHOW, SW_SHOWNORMAL, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CLOSE,
+                WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETTINGCHANGE, WNDCLASSEXW, WS_CAPTION,
+                WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
             },
         },
     },
@@ -206,6 +206,13 @@ impl<'a> MainWindow<'a> {
             }
             WM_SETTINGCHANGE => {
                 theme::system_theme_changed(hwnd);
+                return LRESULT(0);
+            }
+            WM_CLOSE => {
+                unsafe {
+                    let _ = ShowWindow(hwnd, SW_MINIMIZE);
+                    let _ = ShowWindow(hwnd, SW_HIDE);
+                }
                 return LRESULT(0);
             }
 
