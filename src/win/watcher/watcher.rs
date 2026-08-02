@@ -16,7 +16,7 @@ use super::window_destroy_watcher::WindowDestroyWatcher;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum WatchEvent {
     DisplayChanded,
-    WorkerWDestroied,
+    WorkerWDestroyed,
     TaskbarCreated,
     SessionUnlock,
 }
@@ -56,7 +56,12 @@ impl Watcher {
     }
 
     pub fn handle_window_message(&self, message: u32, wparam: WPARAM) -> Option<WatchEvent> {
-        classify_window_message(message, wparam, self.taskbar_created_message)
+        if let Some(e) = classify_window_message(message, wparam, self.taskbar_created_message) {
+            log::info!("WatchEvent raised: {:?}", e);
+            Some(e)
+        } else {
+            None
+        }
     }
 }
 
@@ -81,7 +86,7 @@ fn classify_window_message(message: u32, wparam: WPARAM, taskbar_created_message
         return Some(WatchEvent::SessionUnlock);
     }
     if message == msg_id::WORKER_W_DESTROY_MESSAGE {
-        return Some(WatchEvent::WorkerWDestroied);
+        return Some(WatchEvent::WorkerWDestroyed);
     }
     None
 }
@@ -118,7 +123,7 @@ mod tests {
     fn wallpaper_reset_message_maps_to_reset() {
         assert_eq!(
             classify_window_message(msg_id::WORKER_W_DESTROY_MESSAGE, WPARAM(0), 0),
-            Some(WatchEvent::WorkerWDestroied)
+            Some(WatchEvent::WorkerWDestroyed)
         );
     }
 }

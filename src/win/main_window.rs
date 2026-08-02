@@ -11,10 +11,10 @@ use windows::{
             Shell::ShellExecuteW,
             WindowsAndMessaging::{
                 CS_HREDRAW, CS_VREDRAW, DefWindowProcW, DispatchMessageW, GetClientRect, GetMessageW, GetSystemMetrics,
-                IDC_ARROW, LoadCursorW, LoadIconW, MSG, PostQuitMessage, RegisterClassExW, SM_CXSCREEN, SM_CYSCREEN,
-                SW_HIDE, SW_SHOW, SW_SHOWNORMAL, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CLOSE, WM_DESTROY,
-                WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETTINGCHANGE, WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX,
-                WS_OVERLAPPED, WS_SYSMENU,
+                IDC_ARROW, KillTimer, LoadCursorW, LoadIconW, MSG, PostQuitMessage, RegisterClassExW, SM_CXSCREEN,
+                SM_CYSCREEN, SW_HIDE, SW_SHOW, SW_SHOWNORMAL, SetTimer, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
+                WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_TIMER,
+                WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
             },
         },
     },
@@ -42,6 +42,8 @@ const DEFAULT_WINDOW_HEIGHT: i32 = 320;
 const CONFIG_LINK_MARGIN_RIGHT: i32 = 24;
 const CONFIG_LINK_MARGIN_BOTTOM: i32 = 16;
 const DEFAULT_DPI: u32 = 96;
+const WORKER_W_RESET_TIMER_ID: usize = 1;
+const WORKER_W_RESET_DELAY_MS: u32 = 500;
 
 pub struct MainWindow {
     app_name: String,
@@ -49,6 +51,7 @@ pub struct MainWindow {
     config_file_path: PathBuf,
     wallpaper_manager: WallpaperManager,
     watcher: Option<Watcher>,
+    reset_scheduler: WallpaperResetScheduler,
     tray_icon: Option<TrayIcon>,
     config_dir_hyper_link: Option<Box<Window<HyperLinkText>>>,
 }
@@ -64,6 +67,7 @@ impl MainWindow {
             config_file_path,
             wallpaper_manager: WallpaperManager::new(),
             watcher: None,
+            reset_scheduler: WallpaperResetScheduler::default(),
             tray_icon: None,
             config_dir_hyper_link: None,
         };
@@ -200,28 +204,59 @@ impl MainWindow {
 
     fn refresh_wallpapers(&mut self) {
         if let Err(e) = self.wallpaper_manager.refresh_wallpapers_from_config(&self.config) {
-            log::error!("Refresh wallpapers failed: {}", e);
+            log::error!("Refresh wallpapers failed: {:#}", e);
         }
     }
 
     fn reset_wallpapers(&mut self, hwnd: HWND) {
         self.watcher = None;
         if let Err(e) = self.wallpaper_manager.reset_wallpapers_from_config(&self.config) {
-            log::error!("Reset wallpapers failed: {}", e);
+            log::error!("Reset wallpapers failed: {:#}", e);
         }
         self.recreate_watcher(hwnd);
+    }
+
+    fn schedule_worker_w_reset(&mut self, hwnd: HWND) {
+        if self.reset_scheduler.worker_w_destroyed() == ResetScheduleAction::StartWorkerWResetTimer {
+            let timer_id = unsafe { SetTimer(Some(hwnd), WORKER_W_RESET_TIMER_ID, WORKER_W_RESET_DELAY_MS, None) };
+            if timer_id == 0 {
+                self.reset_scheduler.clear_worker_w_reset();
+                log::error!("Schedule WorkerW reset timer failed");
+                self.reset_wallpapers(hwnd);
+            }
+        }
+    }
+
+    fn cancel_worker_w_reset_timer(&mut self, hwnd: HWND) {
+        unsafe {
+            let _ = KillTimer(Some(hwnd), WORKER_W_RESET_TIMER_ID);
+        }
+    }
+
+    fn handle_taskbar_created(&mut self, hwnd: HWND) {
+        if self.reset_scheduler.taskbar_created() == ResetScheduleAction::CancelWorkerWResetTimerAndResetNow {
+            self.cancel_worker_w_reset_timer(hwnd);
+        }
+        if let Err(e) = self.recreate_tray_icon(hwnd) {
+            log::error!("Recreate tray icon failed: {:#}", e);
+        }
+        self.reset_wallpapers(hwnd);
+    }
+
+    fn handle_worker_w_reset_timer(&mut self, hwnd: HWND) {
+        if self.reset_scheduler.worker_w_reset_timer_elapsed()
+            == ResetScheduleAction::CancelWorkerWResetTimerAndResetNow
+        {
+            self.cancel_worker_w_reset_timer(hwnd);
+            self.reset_wallpapers(hwnd);
+        }
     }
 
     fn handle_watch_event(&mut self, hwnd: HWND, event: WatchEvent) {
         match event {
             WatchEvent::DisplayChanded => self.refresh_wallpapers(),
-            WatchEvent::WorkerWDestroied => self.reset_wallpapers(hwnd),
-            WatchEvent::TaskbarCreated => {
-                if let Err(e) = self.recreate_tray_icon(hwnd) {
-                    log::error!("Recreate tray icon failed: {}", e);
-                }
-                self.reset_wallpapers(hwnd);
-            }
+            WatchEvent::WorkerWDestroyed => self.schedule_worker_w_reset(hwnd),
+            WatchEvent::TaskbarCreated => self.handle_taskbar_created(hwnd),
             WatchEvent::SessionUnlock => {
                 if self.wallpaper_manager.is_desktop_valid() {
                     self.refresh_wallpapers();
@@ -262,6 +297,16 @@ impl MainWindow {
                 theme::system_theme_changed(hwnd);
                 return LRESULT(0);
             }
+            WM_TIMER => {
+                if wparam.0 == WORKER_W_RESET_TIMER_ID {
+                    if let Some(mut ptr) = Window::<Self>::get_self_from_hwnd(hwnd) {
+                        unsafe { ptr.as_mut() }
+                            .component_mut()
+                            .handle_worker_w_reset_timer(hwnd);
+                    }
+                    return LRESULT(0);
+                }
+            }
             WM_CLOSE => {
                 unsafe {
                     let _ = ShowWindow(hwnd, SW_HIDE);
@@ -285,5 +330,101 @@ impl Window<MainWindow> {
     pub fn run(&mut self) -> anyhow::Result<()> {
         let hwnd = self.hwnd();
         self.component_mut().run(hwnd)
+    }
+}
+
+#[derive(Debug, Default)]
+struct WallpaperResetScheduler {
+    worker_w_reset_pending: bool,
+}
+
+impl WallpaperResetScheduler {
+    fn worker_w_destroyed(&mut self) -> ResetScheduleAction {
+        if self.worker_w_reset_pending {
+            ResetScheduleAction::None
+        } else {
+            self.worker_w_reset_pending = true;
+            ResetScheduleAction::StartWorkerWResetTimer
+        }
+    }
+
+    fn taskbar_created(&mut self) -> ResetScheduleAction {
+        if self.worker_w_reset_pending {
+            self.worker_w_reset_pending = false;
+            ResetScheduleAction::CancelWorkerWResetTimerAndResetNow
+        } else {
+            ResetScheduleAction::ResetNow
+        }
+    }
+
+    fn worker_w_reset_timer_elapsed(&mut self) -> ResetScheduleAction {
+        if self.worker_w_reset_pending {
+            self.worker_w_reset_pending = false;
+            ResetScheduleAction::CancelWorkerWResetTimerAndResetNow
+        } else {
+            ResetScheduleAction::None
+        }
+    }
+
+    fn clear_worker_w_reset(&mut self) {
+        self.worker_w_reset_pending = false;
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ResetScheduleAction {
+    None,
+    StartWorkerWResetTimer,
+    CancelWorkerWResetTimerAndResetNow,
+    ResetNow,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn worker_w_destroy_starts_delayed_reset() {
+        let mut scheduler = WallpaperResetScheduler::default();
+
+        assert_eq!(
+            scheduler.worker_w_destroyed(),
+            ResetScheduleAction::StartWorkerWResetTimer
+        );
+    }
+
+    #[test]
+    fn taskbar_created_cancels_pending_worker_w_reset_and_resets_now() {
+        let mut scheduler = WallpaperResetScheduler::default();
+        scheduler.worker_w_destroyed();
+
+        assert_eq!(
+            scheduler.taskbar_created(),
+            ResetScheduleAction::CancelWorkerWResetTimerAndResetNow
+        );
+        assert_eq!(scheduler.worker_w_reset_timer_elapsed(), ResetScheduleAction::None);
+    }
+
+    #[test]
+    fn worker_w_reset_timer_elapsed_resets_once() {
+        let mut scheduler = WallpaperResetScheduler::default();
+        scheduler.worker_w_destroyed();
+
+        assert_eq!(
+            scheduler.worker_w_reset_timer_elapsed(),
+            ResetScheduleAction::CancelWorkerWResetTimerAndResetNow
+        );
+        assert_eq!(scheduler.worker_w_reset_timer_elapsed(), ResetScheduleAction::None);
+    }
+
+    #[test]
+    fn multiple_worker_w_destroy_events_keep_one_pending_reset() {
+        let mut scheduler = WallpaperResetScheduler::default();
+
+        assert_eq!(
+            scheduler.worker_w_destroyed(),
+            ResetScheduleAction::StartWorkerWResetTimer
+        );
+        assert_eq!(scheduler.worker_w_destroyed(), ResetScheduleAction::None);
     }
 }

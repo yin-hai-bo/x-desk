@@ -31,12 +31,12 @@ impl WallpaperManager {
         }
     }
 
-    pub fn refresh_wallpapers<F>(&mut self, f: F) -> Result<()>
+    fn refresh_wallpapers<F>(&mut self, f: F) -> Result<()>
     where
         F: Fn(usize) -> Option<String>,
     {
         if self.desktop.is_none() {
-            self.desktop = Some(Desktop::new()?);
+            self.desktop = Some(Desktop::new().context("Desktop::new() failed")?);
         }
         let desktop = self.desktop.as_ref().ok_or(anyhow!("self.desktop is none"))?;
         let monitors = MonitorManager::refresh_monitors()?;
