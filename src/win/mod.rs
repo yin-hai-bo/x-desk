@@ -12,6 +12,7 @@ pub mod main_window;
 mod menu;
 mod monitor;
 mod msg_id;
+mod occlusion;
 mod resource_ids;
 mod theme;
 mod tray_icon;

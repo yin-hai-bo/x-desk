@@ -35,6 +35,10 @@ impl Monitor {
     pub fn rect(&self) -> &RECT {
         &self.rect_monitor
     }
+
+    pub fn work_rect(&self) -> &RECT {
+        &self.rect_work
+    }
 }
 
 pub struct MonitorManager {

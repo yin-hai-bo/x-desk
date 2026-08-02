@@ -26,6 +26,7 @@ use crate::{
     win::{
         hyperlink_text::{Anchor, HorizontalAnchor, HyperLinkFont, HyperLinkText, VerticalAnchor},
         msg_id,
+        occlusion::{self, OcclusionWatcher},
         resource_ids::IDI_APP_ICON,
         theme,
         tray_icon::TrayIcon,
@@ -44,6 +45,8 @@ const CONFIG_LINK_MARGIN_BOTTOM: i32 = 16;
 const DEFAULT_DPI: u32 = 96;
 const WORKER_W_RESET_TIMER_ID: usize = 1;
 const WORKER_W_RESET_DELAY_MS: u32 = 500;
+const OCCLUSION_CHECK_TIMER_ID: usize = 2;
+const OCCLUSION_CHECK_DELAY_MS: u32 = 100;
 
 pub struct MainWindow {
     app_name: String,
@@ -51,7 +54,9 @@ pub struct MainWindow {
     config_file_path: PathBuf,
     wallpaper_manager: WallpaperManager,
     watcher: Option<Watcher>,
+    occlusion_watcher: Option<OcclusionWatcher>,
     reset_scheduler: WallpaperResetScheduler,
+    occlusion_check_pending: bool,
     tray_icon: Option<TrayIcon>,
     config_dir_hyper_link: Option<Box<Window<HyperLinkText>>>,
 }
@@ -67,7 +72,9 @@ impl MainWindow {
             config_file_path,
             wallpaper_manager: WallpaperManager::new(),
             watcher: None,
+            occlusion_watcher: None,
             reset_scheduler: WallpaperResetScheduler::default(),
+            occlusion_check_pending: false,
             tray_icon: None,
             config_dir_hyper_link: None,
         };
@@ -81,6 +88,8 @@ impl MainWindow {
         self.recreate_tray_icon(hwnd)?;
         self.refresh_wallpapers();
         self.recreate_watcher(hwnd);
+        self.recreate_occlusion_watcher(hwnd);
+        self.refresh_occlusions(hwnd);
 
         unsafe {
             let _ = ShowWindow(hwnd, SW_SHOW);
@@ -196,6 +205,11 @@ impl MainWindow {
         ));
     }
 
+    fn recreate_occlusion_watcher(&mut self, hwnd: HWND) {
+        self.occlusion_watcher = None;
+        self.occlusion_watcher = Some(OcclusionWatcher::new(hwnd, msg_id::OCCLUSION_CHECK_MESSAGE));
+    }
+
     fn recreate_tray_icon(&mut self, hwnd: HWND) -> anyhow::Result<()> {
         self.tray_icon = None;
         self.tray_icon = Some(TrayIcon::new(&self.app_name, hwnd, msg_id::TRAY_ICON_MESSAGE)?);
@@ -214,6 +228,7 @@ impl MainWindow {
             log::error!("Reset wallpapers failed: {:#}", e);
         }
         self.recreate_watcher(hwnd);
+        self.refresh_occlusions(hwnd);
     }
 
     fn schedule_worker_w_reset(&mut self, hwnd: HWND) {
@@ -252,14 +267,49 @@ impl MainWindow {
         }
     }
 
+    fn schedule_occlusion_check(&mut self, hwnd: HWND) {
+        self.occlusion_check_pending = true;
+        let timer_id = unsafe { SetTimer(Some(hwnd), OCCLUSION_CHECK_TIMER_ID, OCCLUSION_CHECK_DELAY_MS, None) };
+        if timer_id == 0 {
+            self.occlusion_check_pending = false;
+            log::error!("Schedule occlusion check timer failed");
+            self.refresh_occlusions(hwnd);
+        }
+    }
+
+    fn cancel_occlusion_check_timer(&mut self, hwnd: HWND) {
+        unsafe {
+            let _ = KillTimer(Some(hwnd), OCCLUSION_CHECK_TIMER_ID);
+        }
+    }
+
+    fn handle_occlusion_check_timer(&mut self, hwnd: HWND) {
+        if !self.occlusion_check_pending {
+            return;
+        }
+        self.occlusion_check_pending = false;
+        self.cancel_occlusion_check_timer(hwnd);
+        self.refresh_occlusions(hwnd);
+    }
+
+    fn refresh_occlusions(&mut self, hwnd: HWND) {
+        let regions = self.wallpaper_manager.dock_regions();
+        let occlusions = occlusion::collect_dock_occlusions(hwnd, &regions);
+        self.wallpaper_manager.apply_dock_occlusions(&occlusions);
+    }
+
     fn handle_watch_event(&mut self, hwnd: HWND, event: WatchEvent) {
         match event {
-            WatchEvent::DisplayChanded => self.refresh_wallpapers(),
+            WatchEvent::DisplayChanded => {
+                self.refresh_wallpapers();
+                self.refresh_occlusions(hwnd);
+            }
             WatchEvent::WorkerWDestroyed => self.schedule_worker_w_reset(hwnd),
             WatchEvent::TaskbarCreated => self.handle_taskbar_created(hwnd),
             WatchEvent::SessionUnlock => {
                 if self.wallpaper_manager.is_desktop_valid() {
                     self.refresh_wallpapers();
+                    self.refresh_occlusions(hwnd);
                 } else {
                     self.reset_wallpapers(hwnd);
                 }
@@ -289,6 +339,12 @@ impl MainWindow {
                 }
                 return LRESULT(0);
             }
+            msg_id::OCCLUSION_CHECK_MESSAGE => {
+                if let Some(mut ptr) = Window::<Self>::get_self_from_hwnd(hwnd) {
+                    unsafe { ptr.as_mut() }.component_mut().schedule_occlusion_check(hwnd);
+                }
+                return LRESULT(0);
+            }
             WM_ERASEBKGND => {
                 unsafe { theme::paint_background(hwnd, HDC(wparam.0 as *mut _)) };
                 return LRESULT(1);
@@ -306,6 +362,14 @@ impl MainWindow {
                     }
                     return LRESULT(0);
                 }
+                if wparam.0 == OCCLUSION_CHECK_TIMER_ID {
+                    if let Some(mut ptr) = Window::<Self>::get_self_from_hwnd(hwnd) {
+                        unsafe { ptr.as_mut() }
+                            .component_mut()
+                            .handle_occlusion_check_timer(hwnd);
+                    }
+                    return LRESULT(0);
+                }
             }
             WM_CLOSE => {
                 unsafe {
@@ -315,7 +379,9 @@ impl MainWindow {
             }
             WM_DESTROY => {
                 if let Some(mut ptr) = Window::<Self>::get_self_from_hwnd(hwnd) {
-                    unsafe { ptr.as_mut() }.component_mut().watcher = None;
+                    let window = unsafe { ptr.as_mut() }.component_mut();
+                    window.watcher = None;
+                    window.occlusion_watcher = None;
                 }
                 unsafe { PostQuitMessage(0) };
                 return LRESULT(0);

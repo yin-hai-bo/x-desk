@@ -38,6 +38,7 @@ static MEDIA_FOUNDATION_STARTED: OnceLock<std::result::Result<(), String>> = Onc
 pub(super) struct VideoHost {
     source_url: String,
     player: Option<VideoPlayer>,
+    paused_for_occlusion: bool,
 }
 
 impl VideoHost {
@@ -62,6 +63,7 @@ impl VideoHost {
             Self {
                 source_url,
                 player: None,
+                paused_for_occlusion: false,
             },
         )?;
 
@@ -75,8 +77,35 @@ impl VideoHost {
         if self.source_url == source_url {
             return Ok(());
         }
+        let paused_for_occlusion = self.paused_for_occlusion;
         self.source_url = source_url;
-        self.play(hwnd)
+        self.play(hwnd)?;
+        if paused_for_occlusion {
+            self.pause_for_occlusion()?;
+        }
+        Ok(())
+    }
+
+    pub fn pause_for_occlusion(&mut self) -> Result<()> {
+        if self.paused_for_occlusion {
+            return Ok(());
+        }
+        if let Some(player) = &self.player {
+            player.pause()?;
+        }
+        self.paused_for_occlusion = true;
+        Ok(())
+    }
+
+    pub fn resume_from_occlusion(&mut self) -> Result<()> {
+        if !self.paused_for_occlusion {
+            return Ok(());
+        }
+        if let Some(player) = &self.player {
+            player.resume()?;
+        }
+        self.paused_for_occlusion = false;
+        Ok(())
     }
 
     pub fn resize_to_parent(&self, hwnd: HWND, parent: HWND) -> Result<()> {
@@ -185,6 +214,14 @@ impl VideoPlayer {
             _notify: notify,
             _com: com,
         })
+    }
+
+    fn pause(&self) -> Result<()> {
+        unsafe { self.engine.Pause().context("Pause media playback failed") }
+    }
+
+    fn resume(&self) -> Result<()> {
+        unsafe { self.engine.Play().context("Resume media playback failed") }
     }
 }
 

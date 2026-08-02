@@ -26,11 +26,16 @@ static DOCK_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
 pub(super) struct Dock {
     name: String,
     video_host: Option<Box<Window<VideoHost>>>,
+    occluded: bool,
 }
 
 impl Dock {
     pub fn new(name: String) -> Self {
-        Self { name, video_host: None }
+        Self {
+            name,
+            video_host: None,
+            occluded: false,
+        }
     }
 
     pub fn name(&self) -> &str {
@@ -44,9 +49,29 @@ impl Dock {
                 video_host.component_mut().set_source(video_host_hwnd, source)
             }
             None => {
-                self.video_host = Some(VideoHost::create(hwnd, source)?);
+                let mut video_host = VideoHost::create(hwnd, source)?;
+                if self.occluded {
+                    video_host.component_mut().pause_for_occlusion()?;
+                }
+                self.video_host = Some(video_host);
                 Ok(())
             }
+        }
+    }
+
+    pub fn set_occluded(&mut self, occluded: bool) -> Result<()> {
+        if self.occluded == occluded {
+            return Ok(());
+        }
+        self.occluded = occluded;
+        if let Some(video_host) = self.video_host.as_mut() {
+            if occluded {
+                video_host.component_mut().pause_for_occlusion()
+            } else {
+                video_host.component_mut().resume_from_occlusion()
+            }
+        } else {
+            Ok(())
         }
     }
 

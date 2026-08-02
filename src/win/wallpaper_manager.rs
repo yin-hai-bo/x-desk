@@ -3,6 +3,7 @@ use crate::{
     config::Config,
     win::{
         dock::Dock,
+        occlusion::DockRegion,
         win_utils::{self, height_of_rect, width_of_rect},
         window::Window,
     },
@@ -43,7 +44,7 @@ impl WallpaperManager {
         self.dock_list.remove_from(monitors.len());
         for (index, monitor) in monitors.iter().enumerate() {
             if let Some(video_url) = f(index) {
-                match self.dock_list.get_or_create(index, monitor.rect()) {
+                match self.dock_list.get_or_create(index, monitor.rect(), monitor.work_rect()) {
                     Ok(dock) => {
                         log::info!("Create dock success, index={}", index);
                         if let Err(e) = Self::set_wallpaper(desktop, dock, monitor.rect(), &video_url) {
@@ -78,6 +79,14 @@ impl WallpaperManager {
             .as_ref()
             .map(Desktop::is_wallpaper_parent_valid)
             .unwrap_or(false)
+    }
+
+    pub(super) fn dock_regions(&self) -> Vec<DockRegion> {
+        self.dock_list.regions()
+    }
+
+    pub(super) fn apply_dock_occlusions(&mut self, occlusions: &[(HWND, bool)]) {
+        self.dock_list.apply_occlusions(occlusions);
     }
 
     fn set_wallpaper(desktop: &Desktop, dock: &mut Box<Window<Dock>>, rc: &RECT, video_url: &str) -> Result<()> {
@@ -159,12 +168,19 @@ impl WallpaperManager {
 #[derive(Default)]
 struct DockList {
     array: [Option<Box<Window<Dock>>>; 16],
+    occlusion_rects: [Option<RECT>; 16],
 }
 
 impl DockList {
     /// 根据下标取得一个 [`Dock`]，若不存在则新建一个。
-    pub fn get_or_create(&mut self, index: usize, rect: &RECT) -> Result<&mut Box<Window<Dock>>> {
+    pub fn get_or_create(
+        &mut self,
+        index: usize,
+        rect: &RECT,
+        occlusion_rect: &RECT,
+    ) -> Result<&mut Box<Window<Dock>>> {
         self.check_index(index)?;
+        self.occlusion_rects[index] = Some(*occlusion_rect);
         if self.array[index].is_none() {
             let dock = Dock::create(format!("x-desk-dock-{}", index), rect)?;
             self.array[index] = Some(dock);
@@ -175,17 +191,44 @@ impl DockList {
     pub fn remove(&mut self, index: usize) -> Result<()> {
         self.check_index(index)?;
         self.array[index] = None;
+        self.occlusion_rects[index] = None;
         Ok(())
     }
 
     pub fn remove_from(&mut self, start: usize) {
-        for dock in self.array.iter_mut().skip(start) {
-            *dock = None;
+        for index in start..self.array.len() {
+            self.array[index] = None;
+            self.occlusion_rects[index] = None;
         }
     }
 
     pub fn clear(&mut self) {
         self.remove_from(0);
+    }
+
+    pub fn regions(&self) -> Vec<DockRegion> {
+        self.array
+            .iter()
+            .zip(self.occlusion_rects.iter())
+            .filter_map(|(dock, occlusion_rect)| {
+                let dock = dock.as_ref()?;
+                let rect = *occlusion_rect.as_ref()?;
+                Some(DockRegion {
+                    hwnd: dock.hwnd(),
+                    rect,
+                })
+            })
+            .collect()
+    }
+
+    pub fn apply_occlusions(&mut self, occlusions: &[(HWND, bool)]) {
+        for (hwnd, occluded) in occlusions {
+            if let Some(dock) = self.array.iter_mut().flatten().find(|dock| dock.hwnd() == *hwnd) {
+                if let Err(e) = dock.component_mut().set_occluded(*occluded) {
+                    log::error!("Set dock occlusion failed: {}", e);
+                }
+            }
+        }
     }
 
     fn check_index(&self, index: usize) -> Result<()> {
