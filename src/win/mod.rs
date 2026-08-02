@@ -5,18 +5,19 @@ use windows::Win32::{
     UI::Shell::{FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath},
 };
 
-mod const_define;
 mod desktop;
 mod dock;
 mod hyperlink_text;
 pub mod main_window;
 mod menu;
 mod monitor;
+mod msg_id;
 mod resource_ids;
 mod theme;
 mod tray_icon;
 mod video_host;
 pub mod wallpaper_manager;
+mod watcher;
 mod wide_string;
 mod win_utils;
 mod window;

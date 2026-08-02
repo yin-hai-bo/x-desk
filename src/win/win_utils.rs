@@ -3,10 +3,10 @@ use std::ops::Deref;
 use anyhow::{Context, Result, bail};
 use windows::{
     Win32::{
-        Foundation::{COLORREF, HWND, LPARAM, RECT, TRUE},
+        Foundation::{COLORREF, FALSE, HWND, LPARAM, RECT, TRUE},
         Graphics::Gdi::{BeginPaint, EndPaint, HDC, HGDIOBJ, PAINTSTRUCT, SelectObject},
         UI::WindowsAndMessaging::{
-            EnumChildWindows, GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, LWA_ALPHA, SET_WINDOW_POS_FLAGS,
+            EnumChildWindows, GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, IsWindow, LWA_ALPHA, SET_WINDOW_POS_FLAGS,
             SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos, WINDOW_EX_STYLE,
             WINDOW_LONG_PTR_INDEX, WINDOW_STYLE, WS_EX_LAYERED,
         },
@@ -55,6 +55,10 @@ pub fn get_window_ex_style(hwnd: HWND) -> Result<WINDOW_EX_STYLE> {
 
 pub fn set_window_ex_style(hwnd: HWND, ex_style: WINDOW_EX_STYLE) -> Result<WINDOW_EX_STYLE> {
     set_window_long_ptr(hwnd, GWL_EXSTYLE, ex_style.0 as isize).map(|r| WINDOW_EX_STYLE(r as u32))
+}
+
+pub fn is_window(hwnd: HWND) -> bool {
+    !hwnd.is_invalid() && unsafe { IsWindow(Some(hwnd)) != FALSE }
 }
 
 pub struct ChildWindowInfo {

@@ -104,6 +104,14 @@ impl Desktop {
         }
     }
 
+    pub(super) fn worker_w(&self) -> HWND {
+        self.worker_w
+    }
+
+    pub(super) fn is_wallpaper_parent_valid(&self) -> bool {
+        win_utils::is_window(self.parent_of_wallpaper())
+    }
+
     pub fn is_raised_desktop(&self) -> bool {
         self.is_raised_desktop
     }

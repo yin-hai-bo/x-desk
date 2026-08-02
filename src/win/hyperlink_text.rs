@@ -1,5 +1,7 @@
 use std::{io, sync::OnceLock};
 
+use anyhow::Result;
+
 use ::windows::Win32::UI::WindowsAndMessaging::{RegisterClassExW, WNDCLASSEXW};
 use windows::{
     Win32::{
@@ -80,7 +82,7 @@ impl HyperLinkText {
         anchor: Anchor,
         font: HyperLinkFont,
         on_click: Option<impl Fn() + 'static>,
-    ) -> anyhow::Result<Box<Window<HyperLinkText>>> {
+    ) -> Result<Box<Window<HyperLinkText>>> {
         let instance = unsafe { GetModuleHandleW(PCWSTR::null())?.into() };
         register_window_class(instance)?;
 
@@ -134,13 +136,13 @@ impl HyperLinkText {
                 return LRESULT(1);
             }
             WM_LBUTTONUP => {
-                if let Some(p) = unsafe { Window::<HyperLinkText>::get_self_from_hwnd(hwnd) } {
-                    let w = unsafe { &mut *p };
-                    if let Some(on_click) = &w.component().on_click {
+                if let Some(ptr) = Window::<Self>::get_self_from_hwnd(hwnd) {
+                    let window = unsafe { ptr.as_ref() };
+                    if let Some(on_click) = &window.component().on_click {
                         on_click();
                     };
+                    return LRESULT(0);
                 }
-                return LRESULT(0);
             }
             WM_NCDESTROY => Window::<HyperLinkText>::on_wm_ncdestroy(hwnd),
             _ => {}
@@ -153,7 +155,7 @@ fn cursor() -> HCURSOR {
     unsafe { LoadCursorW(None, IDC_HAND).unwrap_or(LoadCursorW(None, IDC_ARROW).unwrap_or_default()) }
 }
 
-fn register_window_class(inst: HINSTANCE) -> anyhow::Result<()> {
+fn register_window_class(inst: HINSTANCE) -> Result<()> {
     static REGISTERED: OnceLock<io::Result<()>> = OnceLock::new();
 
     REGISTERED
@@ -183,7 +185,7 @@ fn register_window_class(inst: HINSTANCE) -> anyhow::Result<()> {
         .map_err(|error| error.into())
 }
 
-fn create_underline_font(hwnd: HWND, font: &HyperLinkFont) -> anyhow::Result<HFONT> {
+fn create_underline_font(hwnd: HWND, font: &HyperLinkFont) -> Result<HFONT> {
     let font_name = WideString::new(&font.name);
     let mut dpi = unsafe { windows::Win32::UI::HiDpi::GetDpiForWindow(hwnd) };
     if dpi == 0 {
@@ -215,7 +217,7 @@ fn create_underline_font(hwnd: HWND, font: &HyperLinkFont) -> anyhow::Result<HFO
     }
 }
 
-fn autosize_bounds(hwnd: HWND, text: &str, anchor: Anchor, font: HFONT) -> anyhow::Result<RECT> {
+fn autosize_bounds(hwnd: HWND, text: &str, anchor: Anchor, font: HFONT) -> Result<RECT> {
     let dc = unsafe { GetDC(Some(hwnd)) };
     if dc.is_invalid() {
         return Err(io::Error::last_os_error().into());
@@ -262,29 +264,30 @@ fn autosize_bounds(hwnd: HWND, text: &str, anchor: Anchor, font: HFONT) -> anyho
     result
 }
 
-fn paint(hwnd: HWND) -> anyhow::Result<()> {
-    let dc = PaintDC::new(hwnd)?;
-    let w = unsafe { Window::<HyperLinkText>::get_self_from_hwnd(hwnd) }
-        .ok_or_else(|| anyhow::anyhow!("Cannot get window object when paint"))?;
-    let window = unsafe { &*w };
+fn paint(hwnd: HWND) -> Result<()> {
+    if let Some(ptr) = Window::<HyperLinkText>::get_self_from_hwnd(hwnd) {
+        let window = unsafe { ptr.as_ref() };
+        let mut text = window.get_window_text()?;
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: 0,
+            bottom: 0,
+        };
+        unsafe {
+            let _ = GetClientRect(hwnd, &mut rect);
+        }
 
-    let mut rect = RECT {
-        left: 0,
-        top: 0,
-        right: 0,
-        bottom: 0,
-    };
-    unsafe {
-        let _ = GetClientRect(hwnd, &mut rect);
+        let dc = PaintDC::new(hwnd)?;
+        unsafe {
+            let old_font = SelectObject(*dc, (*window.component().font).into());
+            SetBkMode(*dc, TRANSPARENT);
+            SetTextColor(*dc, theme::hyperlink_text_color());
+            DrawTextW(*dc, &mut text, &mut rect, DT_SINGLELINE);
+            SelectObject(*dc, old_font);
+        }
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("Cannot get window object when paint"))
     }
-
-    let mut text = window.get_window_text()?;
-    unsafe {
-        let old_font = SelectObject(*dc, (*window.component().font).into());
-        SetBkMode(*dc, TRANSPARENT);
-        SetTextColor(*dc, theme::hyperlink_text_color());
-        DrawTextW(*dc, &mut text, &mut rect, DT_SINGLELINE);
-        SelectObject(*dc, old_font);
-    }
-    Ok(())
 }

@@ -105,8 +105,8 @@ impl Dock {
             WM_NCCREATE => Window::<Dock>::on_wm_nccreate(hwnd, lparam),
             WM_NCDESTROY => Window::<Dock>::on_wm_ncdestroy(hwnd),
             WM_SIZE => {
-                if let Some(p) = unsafe { Window::<Dock>::get_self_from_hwnd(hwnd) } {
-                    let window = unsafe { &*p };
+                if let Some(mut ptr) = Window::<Dock>::get_self_from_hwnd(hwnd) {
+                    let window = unsafe { ptr.as_mut() };
                     window.component().resize_video_host(hwnd);
                 }
             }

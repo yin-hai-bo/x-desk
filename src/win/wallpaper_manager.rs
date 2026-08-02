@@ -1,6 +1,6 @@
 use super::{desktop::Desktop, monitor::MonitorManager};
 use crate::{
-    beacon::Beacon,
+    config::Config,
     win::{
         dock::Dock,
         win_utils::{self, height_of_rect, width_of_rect},
@@ -18,16 +18,14 @@ use windows::Win32::{
     },
 };
 
-pub struct WallpaperManager<'a> {
-    _beacon: &'a Beacon,
+pub struct WallpaperManager {
     desktop: Option<Desktop>,
     dock_list: DockList,
 }
 
-impl<'a> WallpaperManager<'a> {
-    pub fn new(_beacon: &'a Beacon) -> Self {
+impl WallpaperManager {
+    pub fn new() -> Self {
         Self {
-            _beacon,
             desktop: None,
             dock_list: DockList::default(),
         }
@@ -38,10 +36,11 @@ impl<'a> WallpaperManager<'a> {
         F: Fn(usize) -> Option<String>,
     {
         if self.desktop.is_none() {
-            self.desktop = Some(Desktop::new().context("Cannot get desktop information")?);
+            self.desktop = Some(Desktop::new()?);
         }
         let desktop = self.desktop.as_ref().ok_or(anyhow!("self.desktop is none"))?;
         let monitors = MonitorManager::refresh_monitors()?;
+        self.dock_list.remove_from(monitors.len());
         for (index, monitor) in monitors.iter().enumerate() {
             if let Some(video_url) = f(index) {
                 match self.dock_list.get_or_create(index, monitor.rect()) {
@@ -58,6 +57,27 @@ impl<'a> WallpaperManager<'a> {
             }
         }
         Ok(())
+    }
+
+    pub fn refresh_wallpapers_from_config(&mut self, config: &Config) -> Result<()> {
+        self.refresh_wallpapers(|index| config.video_url_for_monitor(index).map(str::to_string))
+    }
+
+    pub fn reset_wallpapers_from_config(&mut self, config: &Config) -> Result<()> {
+        self.dock_list.clear();
+        self.desktop = None;
+        self.refresh_wallpapers_from_config(config)
+    }
+
+    pub(super) fn desktop_worker_w(&self) -> Option<HWND> {
+        self.desktop.as_ref().map(Desktop::worker_w)
+    }
+
+    pub(super) fn is_desktop_valid(&self) -> bool {
+        self.desktop
+            .as_ref()
+            .map(Desktop::is_wallpaper_parent_valid)
+            .unwrap_or(false)
     }
 
     fn set_wallpaper(desktop: &Desktop, dock: &mut Box<Window<Dock>>, rc: &RECT, video_url: &str) -> Result<()> {
@@ -156,6 +176,16 @@ impl DockList {
         self.check_index(index)?;
         self.array[index] = None;
         Ok(())
+    }
+
+    pub fn remove_from(&mut self, start: usize) {
+        for dock in self.array.iter_mut().skip(start) {
+            *dock = None;
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.remove_from(0);
     }
 
     fn check_index(&self, index: usize) -> Result<()> {

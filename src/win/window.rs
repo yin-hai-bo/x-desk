@@ -1,4 +1,4 @@
-use std::ffi::c_void;
+use std::{ffi::c_void, ptr::NonNull};
 
 use windows::{
     Win32::{
@@ -106,10 +106,7 @@ impl<T> Window<T> {
         self.hwnd = HWND::default();
     }
 
-    /// 从 HWND 里取得指向自身对象的裸指针
-    ///
-    /// ** 返回的指针只在窗口仍绑定该 Window<T> 且调用方保证借用不重叠时可解引用 **
-    pub unsafe fn get_self_from_hwnd(hwnd: HWND) -> Option<*mut Self> {
+    pub fn get_self_from_hwnd(hwnd: HWND) -> Option<NonNull<Self>> {
         if unsafe { IsWindow(Some(hwnd)) } == FALSE {
             return None;
         }
@@ -117,7 +114,7 @@ impl<T> Window<T> {
         if ptr.is_null() {
             return None;
         }
-        Some(ptr as *mut Self)
+        NonNull::new(ptr as *mut Self)
     }
 
     pub fn show_window(&self, cmd: SHOW_WINDOW_CMD) -> bool {

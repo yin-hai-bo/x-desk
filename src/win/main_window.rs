@@ -1,13 +1,10 @@
-use std::{
-    ffi::c_void,
-    path::{Path, PathBuf},
-};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, anyhow};
 use windows::{
     Win32::{
         Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM},
-        Graphics::Gdi::{HBRUSH, HDC, UpdateWindow},
+        Graphics::Gdi::{CreateSolidBrush, HDC, UpdateWindow},
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             HiDpi::{GetDpiForSystem, GetDpiForWindow},
@@ -15,9 +12,9 @@ use windows::{
             WindowsAndMessaging::{
                 CS_HREDRAW, CS_VREDRAW, DefWindowProcW, DispatchMessageW, GetClientRect, GetMessageW, GetSystemMetrics,
                 IDC_ARROW, LoadCursorW, LoadIconW, MSG, PostQuitMessage, RegisterClassExW, SM_CXSCREEN, SM_CYSCREEN,
-                SW_HIDE, SW_MINIMIZE, SW_SHOW, SW_SHOWNORMAL, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CLOSE,
-                WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETTINGCHANGE, WNDCLASSEXW, WS_CAPTION,
-                WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
+                SW_HIDE, SW_SHOW, SW_SHOWNORMAL, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CLOSE, WM_DESTROY,
+                WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETTINGCHANGE, WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX,
+                WS_OVERLAPPED, WS_SYSMENU,
             },
         },
     },
@@ -25,14 +22,15 @@ use windows::{
 };
 
 use crate::{
-    beacon::Beacon,
     config::Config,
     win::{
-        const_define,
         hyperlink_text::{Anchor, HorizontalAnchor, HyperLinkFont, HyperLinkText, VerticalAnchor},
+        msg_id,
         resource_ids::IDI_APP_ICON,
         theme,
         tray_icon::TrayIcon,
+        wallpaper_manager::WallpaperManager,
+        watcher::{WatchEvent, Watcher},
         wide_string::WideString,
         window::Window,
     },
@@ -45,30 +43,27 @@ const CONFIG_LINK_MARGIN_RIGHT: i32 = 24;
 const CONFIG_LINK_MARGIN_BOTTOM: i32 = 16;
 const DEFAULT_DPI: u32 = 96;
 
-pub struct MainWindow<'a> {
-    _beacon: &'a Beacon,
+pub struct MainWindow {
     app_name: String,
-    _config: Config,
+    config: Config,
     config_file_path: PathBuf,
+    wallpaper_manager: WallpaperManager,
+    watcher: Option<Watcher>,
     tray_icon: Option<TrayIcon>,
     config_dir_hyper_link: Option<Box<Window<HyperLinkText>>>,
 }
 
-impl<'a> MainWindow<'a> {
-    pub fn create(
-        beacon: &'a Beacon,
-        app_name: &str,
-        config: Config,
-        config_file_path: PathBuf,
-    ) -> anyhow::Result<Box<Window<Self>>> {
+impl MainWindow {
+    pub fn create(app_name: &str, config: Config, config_file_path: PathBuf) -> anyhow::Result<Box<Window<Self>>> {
         let instance = unsafe { GetModuleHandleW(PCWSTR::null())?.into() };
         Self::register_class(instance)?;
 
         let component = Self {
-            _beacon: beacon,
             app_name: app_name.to_string(),
-            _config: config,
+            config,
             config_file_path,
+            wallpaper_manager: WallpaperManager::new(),
+            watcher: None,
             tray_icon: None,
             config_dir_hyper_link: None,
         };
@@ -79,7 +74,9 @@ impl<'a> MainWindow<'a> {
     pub fn run(&mut self, hwnd: HWND) -> anyhow::Result<()> {
         theme::apply_system_theme(hwnd);
         self.config_dir_hyper_link = self.create_config_dir_hyper_link(hwnd).ok();
-        self.tray_icon = Some(TrayIcon::new(&self.app_name, hwnd, const_define::TRAY_ICON_MESSAGE)?);
+        self.tray_icon = Some(TrayIcon::new(&self.app_name, hwnd, msg_id::TRAY_ICON_MESSAGE)?);
+        self.refresh_wallpapers();
+        self.recreate_watcher(hwnd);
 
         unsafe {
             let _ = ShowWindow(hwnd, SW_SHOW);
@@ -117,7 +114,7 @@ impl<'a> MainWindow<'a> {
                 hIcon: icon,
                 hIconSm: icon,
                 hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-                hbrBackground: HBRUSH::default(),
+                hbrBackground: CreateSolidBrush(theme::background_color()),
                 lpszMenuName: PCWSTR::null(),
                 lpszClassName: CLASS_NAME,
             };
@@ -187,13 +184,59 @@ impl<'a> MainWindow<'a> {
         }
     }
 
+    fn recreate_watcher(&mut self, hwnd: HWND) {
+        self.watcher = Some(Watcher::new(
+            hwnd,
+            self.wallpaper_manager.desktop_worker_w(),
+            msg_id::WORKER_W_DESTROY_MESSAGE,
+        ));
+    }
+
+    fn refresh_wallpapers(&mut self) {
+        if let Err(e) = self.wallpaper_manager.refresh_wallpapers_from_config(&self.config) {
+            log::error!("Refresh wallpapers failed: {}", e);
+        }
+    }
+
+    fn reset_wallpapers(&mut self, hwnd: HWND) {
+        self.watcher = None;
+        if let Err(e) = self.wallpaper_manager.reset_wallpapers_from_config(&self.config) {
+            log::error!("Reset wallpapers failed: {}", e);
+        }
+        self.recreate_watcher(hwnd);
+    }
+
+    fn handle_watch_event(&mut self, hwnd: HWND, event: WatchEvent) {
+        match event {
+            WatchEvent::DisplayChanded => self.refresh_wallpapers(),
+            WatchEvent::WorkerWDestroied => self.reset_wallpapers(hwnd),
+            WatchEvent::TaskbarCreated => self.reset_wallpapers(hwnd),
+            WatchEvent::SessionUnlock => {
+                if self.wallpaper_manager.is_desktop_valid() {
+                    self.refresh_wallpapers();
+                } else {
+                    self.reset_wallpapers(hwnd);
+                }
+            }
+        }
+    }
+
     unsafe extern "system" fn window_proc(hwnd: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+        if let Some(mut ptr) = Window::<Self>::get_self_from_hwnd(hwnd) {
+            let window = unsafe { ptr.as_mut() };
+            if let Some(watcher) = &window.component().watcher {
+                if let Some(event) = watcher.handle_window_message(message, wparam) {
+                    window.component_mut().handle_watch_event(hwnd, event);
+                }
+            }
+        }
+
         match message {
             WM_NCCREATE => Window::<Self>::on_wm_nccreate(hwnd, lparam),
             WM_NCDESTROY => Window::<Self>::on_wm_ncdestroy(hwnd),
-            const_define::TRAY_ICON_MESSAGE => {
-                if let Some(p) = unsafe { Window::<Self>::get_self_from_hwnd(hwnd) } {
-                    let window = unsafe { &*p };
+            msg_id::TRAY_ICON_MESSAGE => {
+                if let Some(ptr) = Window::<Self>::get_self_from_hwnd(hwnd) {
+                    let window = unsafe { ptr.as_ref() };
                     if let Some(tray_icon) = &window.component().tray_icon {
                         tray_icon.handle_message(hwnd, lparam);
                     }
@@ -201,7 +244,7 @@ impl<'a> MainWindow<'a> {
                 return LRESULT(0);
             }
             WM_ERASEBKGND => {
-                unsafe { theme::paint_background(hwnd, HDC(wparam.0 as *mut c_void)) };
+                unsafe { theme::paint_background(hwnd, HDC(wparam.0 as *mut _)) };
                 return LRESULT(1);
             }
             WM_SETTINGCHANGE => {
@@ -210,13 +253,14 @@ impl<'a> MainWindow<'a> {
             }
             WM_CLOSE => {
                 unsafe {
-                    let _ = ShowWindow(hwnd, SW_MINIMIZE);
                     let _ = ShowWindow(hwnd, SW_HIDE);
                 }
                 return LRESULT(0);
             }
-
             WM_DESTROY => {
+                if let Some(mut ptr) = Window::<Self>::get_self_from_hwnd(hwnd) {
+                    unsafe { ptr.as_mut() }.component_mut().watcher = None;
+                }
                 unsafe { PostQuitMessage(0) };
                 return LRESULT(0);
             }
@@ -226,7 +270,7 @@ impl<'a> MainWindow<'a> {
     }
 }
 
-impl<'a> Window<MainWindow<'a>> {
+impl Window<MainWindow> {
     pub fn run(&mut self) -> anyhow::Result<()> {
         let hwnd = self.hwnd();
         self.component_mut().run(hwnd)
