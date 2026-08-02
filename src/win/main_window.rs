@@ -74,7 +74,7 @@ impl MainWindow {
     pub fn run(&mut self, hwnd: HWND) -> anyhow::Result<()> {
         theme::apply_system_theme(hwnd);
         self.config_dir_hyper_link = self.create_config_dir_hyper_link(hwnd).ok();
-        self.tray_icon = Some(TrayIcon::new(&self.app_name, hwnd, msg_id::TRAY_ICON_MESSAGE)?);
+        self.recreate_tray_icon(hwnd)?;
         self.refresh_wallpapers();
         self.recreate_watcher(hwnd);
 
@@ -192,6 +192,12 @@ impl MainWindow {
         ));
     }
 
+    fn recreate_tray_icon(&mut self, hwnd: HWND) -> anyhow::Result<()> {
+        self.tray_icon = None;
+        self.tray_icon = Some(TrayIcon::new(&self.app_name, hwnd, msg_id::TRAY_ICON_MESSAGE)?);
+        Ok(())
+    }
+
     fn refresh_wallpapers(&mut self) {
         if let Err(e) = self.wallpaper_manager.refresh_wallpapers_from_config(&self.config) {
             log::error!("Refresh wallpapers failed: {}", e);
@@ -210,7 +216,12 @@ impl MainWindow {
         match event {
             WatchEvent::DisplayChanded => self.refresh_wallpapers(),
             WatchEvent::WorkerWDestroied => self.reset_wallpapers(hwnd),
-            WatchEvent::TaskbarCreated => self.reset_wallpapers(hwnd),
+            WatchEvent::TaskbarCreated => {
+                if let Err(e) = self.recreate_tray_icon(hwnd) {
+                    log::error!("Recreate tray icon failed: {}", e);
+                }
+                self.reset_wallpapers(hwnd);
+            }
             WatchEvent::SessionUnlock => {
                 if self.wallpaper_manager.is_desktop_valid() {
                     self.refresh_wallpapers();
