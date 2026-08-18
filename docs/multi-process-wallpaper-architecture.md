@@ -228,7 +228,7 @@ Do not add the plugin-oriented shape until at least two provider implementations
 - Make the main process start the video process and attach its HWND.
 - Preserve existing pause/resume behavior through IPC commands.
 
-### Phase 4: Own Process Lifetime Robustly
+### [✓] Phase 4: Own Process Lifetime Robustly
 
 - Track process handles, process IDs, HWNDs, monitor indices, and current content specs.
 - Stop content processes when config removes a monitor entry.

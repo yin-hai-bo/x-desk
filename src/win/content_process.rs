@@ -35,8 +35,20 @@ pub(super) struct ContentProcessHandle {
 }
 
 impl ContentProcessHandle {
+    pub(super) fn process_id(&self) -> u32 {
+        self.process.id()
+    }
+
     pub(super) fn hwnd(&self) -> HWND {
         self.hwnd
+    }
+
+    pub(super) fn is_running(&mut self) -> Result<bool> {
+        Ok(self
+            .process
+            .try_wait()
+            .context("Check content process status failed")?
+            .is_none())
     }
 
     pub(super) fn send_command(&mut self, command: ContentCommand) -> Result<()> {

@@ -34,6 +34,7 @@ static DOCK_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
 pub(super) struct Dock {
     name: String,
     content_process: Option<ContentProcessHandle>,
+    content_spec: Option<WallpaperContentSpec>,
     occluded: bool,
 }
 
@@ -42,6 +43,7 @@ impl Dock {
         Self {
             name,
             content_process: None,
+            content_spec: None,
             occluded: false,
         }
     }
@@ -54,14 +56,35 @@ impl Dock {
         self.content_process.as_ref().map(ContentProcessHandle::hwnd)
     }
 
-    pub fn set_content_process(&mut self, content: &WallpaperContentSpec) -> Result<HWND> {
+    pub fn ensure_content_process(&mut self, content: &WallpaperContentSpec) -> Result<HWND> {
+        if self.content_spec.as_ref() == Some(content) {
+            if let Some(process) = self.content_process.as_mut() {
+                if process.is_running()? {
+                    return Ok(process.hwnd());
+                }
+                log::error!(
+                    "Content process exited unexpectedly, pid={}, hwnd={:?}",
+                    process.process_id(),
+                    process.hwnd()
+                );
+            }
+        }
+
         self.content_process = None;
         let mut process = content_process::start_content_process(content)?;
         if self.occluded {
             process.send_command(ContentCommand::Pause)?;
         }
         let hwnd = process.hwnd();
+        log::info!(
+            "Started content process, pid={}, hwnd={:?}, content={:?}, source={}",
+            process.process_id(),
+            hwnd,
+            content.kind,
+            content.source
+        );
         self.content_process = Some(process);
+        self.content_spec = Some(content.clone());
         Ok(hwnd)
     }
 

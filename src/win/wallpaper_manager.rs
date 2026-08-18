@@ -85,7 +85,7 @@ impl WallpaperManager {
         let content_hwnd = match content.kind {
             WallpaperKind::Video => dock
                 .component_mut()
-                .set_content_process(content)
+                .ensure_content_process(content)
                 .context("Set dock content process failed")?,
         };
         let attached = desktop_attachment::attach_content_window(content_hwnd, desktop, rc)?;
