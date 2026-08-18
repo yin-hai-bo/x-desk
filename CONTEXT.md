@@ -4,6 +4,9 @@
 - **Dock Occlusion**: The state in which regular top-level windows cover the work area of the monitor associated with a Dock.
 - **Desktop Rebuild Trigger**: A Windows event that indicates desktop wallpaper host windows may need refresh or full reconstruction.
 - **Occluded Dock**: A Dock whose visible area is at or below the configured visibility threshold.
+- **Settings UI Process**: A short-lived process that presents configuration UI, writes config, and exits after the user is done.
+- **Wallpaper Content Process**: A process that creates an opaque render window for one wallpaper content type. The main process attaches that window to the desktop.
+- **Wallpaper Orchestrator**: The main x-desk process role that owns desktop discovery, WorkerW attachment, monitor layout, occlusion, configuration reloads, and content process lifetime.
 - **Video Host**: A child window inside a Dock that is used as the Media Foundation video render target.
 - **Video Wallpaper**: A local video rendered behind desktop icons as desktop background content.
 - **Wallpaper Reset**: Recreating desktop host discovery and Dock windows from current config after shell or desktop handles become invalid.

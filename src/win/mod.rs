@@ -6,6 +6,7 @@ use windows::Win32::{
 };
 
 mod desktop;
+mod desktop_attachment;
 mod dock;
 mod hyperlink_text;
 pub mod main_window;
