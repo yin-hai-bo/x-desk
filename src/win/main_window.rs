@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{Context, anyhow};
 use windows::{
@@ -8,13 +8,12 @@ use windows::{
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             HiDpi::{GetDpiForSystem, GetDpiForWindow},
-            Shell::ShellExecuteW,
             WindowsAndMessaging::{
                 CS_HREDRAW, CS_VREDRAW, DefWindowProcW, DispatchMessageW, GetClientRect, GetMessageW, GetSystemMetrics,
                 IDC_ARROW, KillTimer, LoadCursorW, LoadIconW, MSG, PostQuitMessage, RegisterClassExW, SM_CXSCREEN,
-                SM_CYSCREEN, SW_HIDE, SW_SHOW, SW_SHOWNORMAL, SetTimer, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
-                WM_CLOSE, WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_TIMER,
-                WNDCLASSEXW, WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
+                SM_CYSCREEN, SW_HIDE, SW_SHOW, SetTimer, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CLOSE,
+                WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW,
+                WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
             },
         },
     },
@@ -28,7 +27,7 @@ use crate::{
         msg_id,
         occlusion::{self, OcclusionWatcher},
         resource_ids::IDI_APP_ICON,
-        theme,
+        settings_process, theme,
         tray_icon::TrayIcon,
         wallpaper_manager::WallpaperManager,
         watcher::{WatchEvent, Watcher},
@@ -168,11 +167,7 @@ impl MainWindow {
     }
 
     fn create_config_dir_hyper_link(&self, hwnd: HWND) -> anyhow::Result<Box<Window<HyperLinkText>>> {
-        let dir = self
-            .config_file_path
-            .parent()
-            .ok_or(anyhow!("Invalid config file directory"))?
-            .to_path_buf();
+        let config_file_path = self.config_file_path.clone();
         let mut client_rect = RECT::default();
         unsafe { GetClientRect(hwnd, &mut client_rect)? };
         let dpi = unsafe { GetDpiForWindow(hwnd) };
@@ -180,21 +175,18 @@ impl MainWindow {
         let margin_bottom = Self::scale_for_dpi(CONFIG_LINK_MARGIN_BOTTOM, dpi);
         HyperLinkText::create(
             hwnd,
-            "Open configuration directory",
+            "Open settings",
             Anchor::new(
                 HorizontalAnchor::Right(client_rect.right - margin_right),
                 VerticalAnchor::Bottom(client_rect.bottom - margin_bottom),
             ),
             HyperLinkFont::new("Segoe UI", 12),
-            Some(move || Self::open_dir(&dir)),
+            Some(move || {
+                if let Err(e) = settings_process::launch_settings_process(&config_file_path) {
+                    log::error!("Launch settings process failed: {:#}", e);
+                }
+            }),
         )
-    }
-
-    fn open_dir(dir: &Path) {
-        let path = WideString::from_os_string(dir.as_os_str());
-        unsafe {
-            ShellExecuteW(None, w!("open"), path.as_pcwstr(), None, None, SW_SHOWNORMAL);
-        }
     }
 
     fn recreate_watcher(&mut self, hwnd: HWND) {

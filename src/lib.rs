@@ -22,6 +22,10 @@ pub fn run_player() -> Result<()> {
     win::player::run_player()
 }
 
+pub fn run_settings() -> Result<()> {
+    win::settings::run_settings()
+}
+
 fn do_run_app() -> Result<()> {
     use win::main_window::MainWindow;
     use windows::Win32::UI::HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext};

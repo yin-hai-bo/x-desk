@@ -7,6 +7,10 @@ edition = "2024"
 name = "x-desk-player"
 path = "src/processes/x-desk-player.rs"
 
+[[bin]]
+name = "x-desk-settings"
+path = "src/processes/x-desk-settings.rs"
+
 [dependencies]
 anyhow = "1.0.104"
 log = "0.4.33"

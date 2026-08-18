@@ -236,7 +236,7 @@ Do not add the plugin-oriented shape until at least two provider implementations
 - Reattach or restart content after Explorer restarts and WorkerW is rebuilt.
 - Clean up all content processes during main process shutdown.
 
-### Phase 5: Extract Settings UI Process
+### [✓] Phase 5: Extract Settings UI Process
 
 - Add `x-desk-settings` as a separate binary.
 - Use WebView only in the settings process.
