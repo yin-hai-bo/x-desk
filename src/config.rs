@@ -17,6 +17,7 @@ pub struct MonitorConfig {
 #[serde(rename_all = "camelCase")]
 pub enum WallpaperKind {
     Video,
+    WebView,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

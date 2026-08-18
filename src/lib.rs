@@ -22,6 +22,10 @@ pub fn run_player() -> Result<()> {
     win::player::run_player()
 }
 
+pub fn run_webview() -> Result<()> {
+    win::webview::run_webview()
+}
+
 pub fn run_settings() -> Result<()> {
     win::settings::run_settings()
 }

@@ -87,6 +87,10 @@ impl WallpaperManager {
                 .component_mut()
                 .ensure_content_process(content)
                 .context("Set dock content process failed")?,
+            WallpaperKind::WebView => dock
+                .component_mut()
+                .ensure_content_process(content)
+                .context("Set dock content process failed")?,
         };
         let attached = desktop_attachment::attach_content_window(content_hwnd, desktop, rc)?;
 

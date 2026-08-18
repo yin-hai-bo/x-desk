@@ -71,23 +71,33 @@ impl Drop for ContentProcessHandle {
 pub(super) fn start_content_process(content: &WallpaperContentSpec) -> Result<ContentProcessHandle> {
     match content.kind {
         WallpaperKind::Video => start_video_process(content),
+        WallpaperKind::WebView => start_webview_process(content),
     }
 }
 
 fn start_video_process(content: &WallpaperContentSpec) -> Result<ContentProcessHandle> {
+    start_process(content, "x-desk-player.exe", "player")
+}
+
+fn start_webview_process(content: &WallpaperContentSpec) -> Result<ContentProcessHandle> {
+    start_process(content, "x-desk-webview.exe", "webview")
+}
+
+fn start_process(content: &WallpaperContentSpec, exe_name: &str, pipe_label: &str) -> Result<ContentProcessHandle> {
     let pipe_name = format!(
-        r"\\.\pipe\x-desk-player-{}-{}",
+        r"\\.\pipe\x-desk-{}-{}-{}",
+        pipe_label,
         std::process::id(),
         NEXT_PIPE_ID.fetch_add(1, Ordering::Relaxed)
     );
     let pipe = create_pipe_server(&pipe_name)?;
-    let process = Command::new(player_exe_path()?)
+    let process = Command::new(content_exe_path(exe_name)?)
         .arg("--pipe")
         .arg(&pipe_name)
         .arg("--source")
         .arg(&content.source)
         .spawn()
-        .context("Start video content process failed")?;
+        .with_context(|| format!("Start {} content process failed", pipe_label))?;
 
     connect_pipe(pipe.as_handle())?;
 
@@ -155,13 +165,8 @@ fn verify_hwnd_owner(hwnd: HWND, expected_process_id: u32) -> Result<()> {
     Ok(())
 }
 
-fn player_exe_path() -> Result<std::path::PathBuf> {
-    let file_name = if cfg!(debug_assertions) {
-        "x-desk-player.exe"
-    } else {
-        "x-desk-player.exe"
-    };
-    Ok(std::env::current_exe()?.with_file_name(file_name))
+fn content_exe_path(exe_name: &str) -> Result<std::path::PathBuf> {
+    Ok(std::env::current_exe()?.with_file_name(exe_name))
 }
 
 trait PipeHandle {

@@ -8,16 +8,22 @@ name = "x-desk-player"
 path = "src/processes/x-desk-player.rs"
 
 [[bin]]
+name = "x-desk-webview"
+path = "src/processes/x-desk-webview.rs"
+
+[[bin]]
 name = "x-desk-settings"
 path = "src/processes/x-desk-settings.rs"
 
 [dependencies]
 anyhow = "1.0.104"
 log = "0.4.33"
+regex = "1.12.2"
 serde = { version = "1.0.229", features = ["derive"] }
 toml = "0.8.23"
 windows-core = "0.62.2"
 windows-implement = "0.60.2"
+webview2-com = "0.39.1"
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",

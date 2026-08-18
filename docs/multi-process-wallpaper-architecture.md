@@ -244,10 +244,10 @@ Do not add the plugin-oriented shape until at least two provider implementations
 - Launch settings from tray or another main-process command.
 - Keep the main process independent of WebView dependencies if practical.
 
-### Phase 6: Generalize Content Types
+### [✓] Phase 6: Generalize Content Types
 
 - Change config from `video_url` to `kind` and `source` when compatibility requirements are clear.
-- Add image content process or another second renderer to validate the content process seam.
+- Add a WebView2 content process that can render inline HTML, HTML pages, or browser-playable video sources.
 - Only after two real renderers exist, consider provider-based config.
 
 ## Verification Plan
