@@ -8,9 +8,22 @@ use std::{
 #[cfg(target_os = "windows")]
 use crate::win;
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct MonitorConfig {
-    video_url: String,
+    kind: WallpaperKind,
+    source: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WallpaperKind {
+    Video,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WallpaperContentSpec {
+    pub kind: WallpaperKind,
+    pub source: String,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -19,11 +32,16 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn video_url_for_monitor(&self, index: usize) -> Option<&str> {
-        self.monitors
-            .get(index)
-            .map(|monitor| monitor.video_url.trim())
-            .filter(|url| !url.is_empty())
+    pub fn content_for_monitor(&self, index: usize) -> Option<WallpaperContentSpec> {
+        let monitor = self.monitors.get(index)?;
+        let source = monitor.source.trim();
+        if source.is_empty() {
+            return None;
+        }
+        Some(WallpaperContentSpec {
+            kind: monitor.kind,
+            source: source.to_string(),
+        })
     }
 
     pub fn load_from_file<P>(path: &P) -> anyhow::Result<Self>
@@ -72,45 +90,55 @@ fn current_exe_dir() -> anyhow::Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, MonitorConfig};
+    use super::{Config, MonitorConfig, WallpaperContentSpec, WallpaperKind};
     use std::{fs, path::PathBuf};
 
     #[test]
-    fn monitor_index_maps_to_monitor_url() {
+    fn monitor_index_maps_to_content() {
         let config = Config {
             monitors: vec![
                 MonitorConfig {
-                    video_url: "C:\\videos\\one.mp4".to_string(),
+                    kind: WallpaperKind::Video,
+                    source: "C:\\videos\\one.mp4".to_string(),
                 },
                 MonitorConfig {
-                    video_url: "C:\\videos\\two.mp4".to_string(),
+                    kind: WallpaperKind::Video,
+                    source: "C:\\videos\\two.mp4".to_string(),
                 },
             ],
         };
 
-        assert_eq!(config.video_url_for_monitor(1), Some("C:\\videos\\two.mp4"));
+        assert_eq!(
+            config.content_for_monitor(1),
+            Some(WallpaperContentSpec {
+                kind: WallpaperKind::Video,
+                source: "C:\\videos\\two.mp4".to_string(),
+            })
+        );
     }
 
     #[test]
-    fn empty_monitor_url_is_disabled() {
+    fn empty_monitor_source_is_disabled() {
         let config = Config {
             monitors: vec![MonitorConfig {
-                video_url: "   ".to_string(),
+                kind: WallpaperKind::Video,
+                source: "   ".to_string(),
             }],
         };
 
-        assert_eq!(config.video_url_for_monitor(0), None);
+        assert_eq!(config.content_for_monitor(0), None);
     }
 
     #[test]
-    fn out_of_range_monitor_url_is_disabled() {
+    fn out_of_range_monitor_content_is_disabled() {
         let config = Config {
             monitors: vec![MonitorConfig {
-                video_url: "C:\\videos\\one.mp4".to_string(),
+                kind: WallpaperKind::Video,
+                source: "C:\\videos\\one.mp4".to_string(),
             }],
         };
 
-        assert_eq!(config.video_url_for_monitor(1), None);
+        assert_eq!(config.content_for_monitor(1), None);
     }
 
     #[test]
@@ -120,18 +148,32 @@ mod tests {
             &path,
             r#"
 [[monitors]]
-video_url = "C:\\videos\\one.mp4"
+kind = "video"
+source = "C:\\videos\\one.mp4"
 
 [[monitors]]
-video_url = "C:\\videos\\two.mp4"
+kind = "video"
+source = "C:\\videos\\two.mp4"
 "#,
         )
         .unwrap();
 
         let config = Config::load_from_file(&path).unwrap();
 
-        assert_eq!(config.video_url_for_monitor(0), Some("C:\\videos\\one.mp4"));
-        assert_eq!(config.video_url_for_monitor(1), Some("C:\\videos\\two.mp4"));
+        assert_eq!(
+            config.content_for_monitor(0),
+            Some(WallpaperContentSpec {
+                kind: WallpaperKind::Video,
+                source: "C:\\videos\\one.mp4".to_string(),
+            })
+        );
+        assert_eq!(
+            config.content_for_monitor(1),
+            Some(WallpaperContentSpec {
+                kind: WallpaperKind::Video,
+                source: "C:\\videos\\two.mp4".to_string(),
+            })
+        );
         let _ = fs::remove_file(path);
     }
 

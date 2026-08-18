@@ -1,6 +1,6 @@
 use super::{desktop::Desktop, desktop_attachment, monitor::MonitorManager};
 use crate::{
-    config::Config,
+    config::{Config, WallpaperContentSpec, WallpaperKind},
     win::{dock::Dock, occlusion::DockRegion, window::Window},
 };
 use anyhow::{Context, Result, anyhow, bail};
@@ -21,7 +21,7 @@ impl WallpaperManager {
 
     fn refresh_wallpapers<F>(&mut self, f: F) -> Result<()>
     where
-        F: Fn(usize) -> Option<String>,
+        F: Fn(usize) -> Option<WallpaperContentSpec>,
     {
         if self.desktop.is_none() {
             self.desktop = Some(Desktop::new().context("Desktop::new() failed")?);
@@ -30,11 +30,11 @@ impl WallpaperManager {
         let monitors = MonitorManager::refresh_monitors()?;
         self.dock_list.remove_from(monitors.len());
         for (index, monitor) in monitors.iter().enumerate() {
-            if let Some(video_url) = f(index) {
+            if let Some(content) = f(index) {
                 match self.dock_list.get_or_create(index, monitor.rect(), monitor.work_rect()) {
                     Ok(dock) => {
                         log::info!("Create dock success, index={}", index);
-                        if let Err(e) = Self::set_wallpaper(desktop, dock, monitor.rect(), &video_url) {
+                        if let Err(e) = Self::set_wallpaper_content(desktop, dock, monitor.rect(), &content) {
                             log::error!("Error when set wallpaper: {}", e);
                         }
                     }
@@ -48,7 +48,7 @@ impl WallpaperManager {
     }
 
     pub fn refresh_wallpapers_from_config(&mut self, config: &Config) -> Result<()> {
-        self.refresh_wallpapers(|index| config.video_url_for_monitor(index).map(str::to_string))
+        self.refresh_wallpapers(|index| config.content_for_monitor(index))
     }
 
     pub fn reset_wallpapers_from_config(&mut self, config: &Config) -> Result<()> {
@@ -76,21 +76,30 @@ impl WallpaperManager {
         self.dock_list.apply_occlusions(occlusions);
     }
 
-    fn set_wallpaper(desktop: &Desktop, dock: &mut Box<Window<Dock>>, rc: &RECT, video_url: &str) -> Result<()> {
+    fn set_wallpaper_content(
+        desktop: &Desktop,
+        dock: &mut Box<Window<Dock>>,
+        rc: &RECT,
+        content: &WallpaperContentSpec,
+    ) -> Result<()> {
         let dock_hwnd = dock.hwnd();
         let attached = desktop_attachment::attach_content_window(dock_hwnd, desktop, rc)?;
-        dock.component_mut()
-            .set_video_source(dock_hwnd, video_url)
-            .context("Set dock video source failed")?;
+        match content.kind {
+            WallpaperKind::Video => dock
+                .component_mut()
+                .set_video_source(dock_hwnd, &content.source)
+                .context("Set dock video source failed")?,
+        }
 
         log::info!(
-            "{}: pos=({},{}), size={}x{}, video: {}",
+            "{}: pos=({},{}), size={}x{}, content: {:?}, source: {}",
             dock.name(),
             attached.x,
             attached.y,
             attached.width,
             attached.height,
-            video_url
+            content.kind,
+            content.source
         );
 
         Ok(())

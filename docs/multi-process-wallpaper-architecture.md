@@ -212,7 +212,7 @@ Do not add the plugin-oriented shape until at least two provider implementations
 - Keep `Dock` and `VideoHost` in-process for this phase.
 - Verify current video wallpaper behavior is unchanged.
 
-### Phase 2: Introduce Content Spec
+### [✓] Phase 2: Introduce Content Spec
 
 - Add a content-oriented config model internally, even if the file still uses `video_url`.
 - Convert monitor config into `ContentProcessSpec` or an equivalent internal model.
