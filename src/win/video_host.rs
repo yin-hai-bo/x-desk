@@ -7,7 +7,7 @@ use std::{
 use anyhow::{Context, Result, bail};
 use windows::{
     Win32::{
-        Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM},
+        Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM},
         Graphics::Gdi::{BLACK_BRUSH, GetStockObject, HBRUSH},
         Media::MediaFoundation::{
             CLSID_MFMediaEngineClassFactory, IMFAttributes, IMFMediaEngine, IMFMediaEngineClassFactory,
@@ -20,20 +20,22 @@ use windows::{
             LibraryLoader::GetModuleHandleW,
         },
         UI::WindowsAndMessaging::{
-            DefWindowProcW, GetClientRect, RegisterClassExW, SWP_NOACTIVATE, SWP_NOZORDER, SWP_SHOWWINDOW,
-            WINDOW_EX_STYLE, WM_NCCREATE, WM_NCDESTROY, WNDCLASSEXW, WS_CHILD, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
-            WS_VISIBLE,
+            DefWindowProcW, PostQuitMessage, RegisterClassExW, WINDOW_EX_STYLE, WM_NCCREATE, WM_NCDESTROY, WNDCLASSEXW,
+            WS_CLIPCHILDREN, WS_CLIPSIBLINGS, WS_POPUP, WS_VISIBLE,
         },
     },
     core::{BSTR, PCWSTR, w},
 };
 use windows_implement::implement;
 
-use crate::win::{wide_string::WideString, win_utils, window::Window};
+use crate::win::{wide_string::WideString, window::Window};
 
 const VIDEO_HOST_CLASS_NAME: PCWSTR = w!("X-Desk-VideoHost-Class");
 static VIDEO_HOST_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
 static MEDIA_FOUNDATION_STARTED: OnceLock<std::result::Result<(), String>> = OnceLock::new();
+pub(super) const PLAYER_PAUSE_MESSAGE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 1;
+pub(super) const PLAYER_RESUME_MESSAGE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 2;
+pub(super) const PLAYER_STOP_MESSAGE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 3;
 
 pub(super) struct VideoHost {
     source_url: String,
@@ -42,22 +44,21 @@ pub(super) struct VideoHost {
 }
 
 impl VideoHost {
-    pub fn create(parent: HWND, source: &str) -> Result<Box<Window<Self>>> {
+    pub fn create_player_window(source: &str) -> Result<Box<Window<Self>>> {
         let source_url = local_video_source_url(source)?;
         let inst = unsafe { GetModuleHandleW(PCWSTR::null()) }?.into();
         Self::register_class(inst)?;
 
-        let rect = parent_client_rect(parent)?;
         let mut window = Window::create(
             WINDOW_EX_STYLE(0),
             VIDEO_HOST_CLASS_NAME,
-            WideString::new("x-desk-video-host").as_pcwstr(),
-            WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
+            WideString::new("x-desk-player").as_pcwstr(),
+            WS_POPUP | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS,
             0,
             0,
-            win_utils::width_of_rect(&rect),
-            win_utils::height_of_rect(&rect),
-            Some(parent),
+            1,
+            1,
+            None,
             None,
             Some(inst),
             Self {
@@ -70,20 +71,6 @@ impl VideoHost {
         let hwnd = window.hwnd();
         window.component_mut().play(hwnd)?;
         Ok(window)
-    }
-
-    pub fn set_source(&mut self, hwnd: HWND, source: &str) -> Result<()> {
-        let source_url = local_video_source_url(source)?;
-        if self.source_url == source_url {
-            return Ok(());
-        }
-        let paused_for_occlusion = self.paused_for_occlusion;
-        self.source_url = source_url;
-        self.play(hwnd)?;
-        if paused_for_occlusion {
-            self.pause_for_occlusion()?;
-        }
-        Ok(())
     }
 
     pub fn pause_for_occlusion(&mut self) -> Result<()> {
@@ -106,19 +93,6 @@ impl VideoHost {
         }
         self.paused_for_occlusion = false;
         Ok(())
-    }
-
-    pub fn resize_to_parent(&self, hwnd: HWND, parent: HWND) -> Result<()> {
-        let rect = parent_client_rect(parent)?;
-        win_utils::set_window_pos(
-            hwnd,
-            None,
-            0,
-            0,
-            win_utils::width_of_rect(&rect),
-            win_utils::height_of_rect(&rect),
-            SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOZORDER,
-        )
     }
 
     fn play(&mut self, hwnd: HWND) -> Result<()> {
@@ -153,6 +127,26 @@ impl VideoHost {
         match msg {
             WM_NCCREATE => Window::<VideoHost>::on_wm_nccreate(hwnd, lparam),
             WM_NCDESTROY => Window::<VideoHost>::on_wm_ncdestroy(hwnd),
+            PLAYER_PAUSE_MESSAGE => {
+                if let Some(mut ptr) = Window::<VideoHost>::get_self_from_hwnd(hwnd) {
+                    if let Err(e) = unsafe { ptr.as_mut() }.component_mut().pause_for_occlusion() {
+                        log::error!("Pause video player failed: {}", e);
+                    }
+                }
+                return LRESULT(0);
+            }
+            PLAYER_RESUME_MESSAGE => {
+                if let Some(mut ptr) = Window::<VideoHost>::get_self_from_hwnd(hwnd) {
+                    if let Err(e) = unsafe { ptr.as_mut() }.component_mut().resume_from_occlusion() {
+                        log::error!("Resume video player failed: {}", e);
+                    }
+                }
+                return LRESULT(0);
+            }
+            PLAYER_STOP_MESSAGE => {
+                unsafe { PostQuitMessage(0) };
+                return LRESULT(0);
+            }
             _ => {}
         }
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
@@ -280,12 +274,6 @@ fn start_media_foundation() -> Result<()> {
         .as_ref()
         .map(|_| ())
         .map_err(|error| anyhow::anyhow!(error.clone()))
-}
-
-fn parent_client_rect(parent: HWND) -> Result<RECT> {
-    let mut rect = RECT::default();
-    unsafe { GetClientRect(parent, &mut rect) }.context("GetClientRect() failed")?;
-    Ok(rect)
 }
 
 fn local_video_source_url(source: &str) -> Result<String> {

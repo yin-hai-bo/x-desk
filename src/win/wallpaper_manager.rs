@@ -82,14 +82,13 @@ impl WallpaperManager {
         rc: &RECT,
         content: &WallpaperContentSpec,
     ) -> Result<()> {
-        let dock_hwnd = dock.hwnd();
-        let attached = desktop_attachment::attach_content_window(dock_hwnd, desktop, rc)?;
-        match content.kind {
+        let content_hwnd = match content.kind {
             WallpaperKind::Video => dock
                 .component_mut()
-                .set_video_source(dock_hwnd, &content.source)
-                .context("Set dock video source failed")?,
-        }
+                .set_content_process(content)
+                .context("Set dock content process failed")?,
+        };
+        let attached = desktop_attachment::attach_content_window(content_hwnd, desktop, rc)?;
 
         log::info!(
             "{}: pos=({},{}), size={}x{}, content: {:?}, source: {}",
@@ -156,7 +155,7 @@ impl DockList {
                 let dock = dock.as_ref()?;
                 let rect = *occlusion_rect.as_ref()?;
                 Some(DockRegion {
-                    hwnd: dock.hwnd(),
+                    hwnd: dock.component().content_hwnd()?,
                     rect,
                 })
             })
@@ -165,7 +164,12 @@ impl DockList {
 
     pub fn apply_occlusions(&mut self, occlusions: &[(HWND, bool)]) {
         for (hwnd, occluded) in occlusions {
-            if let Some(dock) = self.array.iter_mut().flatten().find(|dock| dock.hwnd() == *hwnd) {
+            if let Some(dock) = self
+                .array
+                .iter_mut()
+                .flatten()
+                .find(|dock| dock.component().content_hwnd() == Some(*hwnd))
+            {
                 if let Err(e) = dock.component_mut().set_occluded(*occluded) {
                     log::error!("Set dock occlusion failed: {}", e);
                 }

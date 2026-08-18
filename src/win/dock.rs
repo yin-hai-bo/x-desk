@@ -10,14 +10,22 @@ use windows::{
         Graphics::Gdi::{BLACK_BRUSH, GetStockObject, HBRUSH},
         System::LibraryLoader::GetModuleHandleW,
         UI::WindowsAndMessaging::{
-            DefWindowProcW, RegisterClassExW, WM_NCCREATE, WM_NCDESTROY, WM_SIZE, WNDCLASSEXW, WS_CLIPCHILDREN,
-            WS_CLIPSIBLINGS, WS_EX_NOACTIVATE, WS_POPUP,
+            DefWindowProcW, RegisterClassExW, WM_NCCREATE, WM_NCDESTROY, WNDCLASSEXW, WS_CLIPCHILDREN, WS_CLIPSIBLINGS,
+            WS_EX_NOACTIVATE, WS_POPUP,
         },
     },
     core::{PCWSTR, w},
 };
 
-use crate::win::{video_host::VideoHost, wide_string::WideString, win_utils, window::Window};
+use crate::{
+    config::WallpaperContentSpec,
+    win::{
+        content_process::{self, ContentCommand, ContentProcessHandle},
+        wide_string::WideString,
+        win_utils,
+        window::Window,
+    },
+};
 
 const DOCK_CLASS_NAME: PCWSTR = w!("X-Desk-Dock-Class");
 static DOCK_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
@@ -25,7 +33,7 @@ static DOCK_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
 /// 挂接在桌面的窗口，在这个窗口里可进行图片显示、视频渲染等，从而显示特殊的 Wallpaper
 pub(super) struct Dock {
     name: String,
-    video_host: Option<Box<Window<VideoHost>>>,
+    content_process: Option<ContentProcessHandle>,
     occluded: bool,
 }
 
@@ -33,7 +41,7 @@ impl Dock {
     pub fn new(name: String) -> Self {
         Self {
             name,
-            video_host: None,
+            content_process: None,
             occluded: false,
         }
     }
@@ -42,21 +50,19 @@ impl Dock {
         &self.name
     }
 
-    pub fn set_video_source(&mut self, hwnd: HWND, source: &str) -> Result<()> {
-        match self.video_host.as_mut() {
-            Some(video_host) => {
-                let video_host_hwnd = video_host.hwnd();
-                video_host.component_mut().set_source(video_host_hwnd, source)
-            }
-            None => {
-                let mut video_host = VideoHost::create(hwnd, source)?;
-                if self.occluded {
-                    video_host.component_mut().pause_for_occlusion()?;
-                }
-                self.video_host = Some(video_host);
-                Ok(())
-            }
+    pub fn content_hwnd(&self) -> Option<HWND> {
+        self.content_process.as_ref().map(ContentProcessHandle::hwnd)
+    }
+
+    pub fn set_content_process(&mut self, content: &WallpaperContentSpec) -> Result<HWND> {
+        self.content_process = None;
+        let mut process = content_process::start_content_process(content)?;
+        if self.occluded {
+            process.send_command(ContentCommand::Pause)?;
         }
+        let hwnd = process.hwnd();
+        self.content_process = Some(process);
+        Ok(hwnd)
     }
 
     pub fn set_occluded(&mut self, occluded: bool) -> Result<()> {
@@ -64,22 +70,14 @@ impl Dock {
             return Ok(());
         }
         self.occluded = occluded;
-        if let Some(video_host) = self.video_host.as_mut() {
+        if let Some(process) = self.content_process.as_mut() {
             if occluded {
-                video_host.component_mut().pause_for_occlusion()
+                process.send_command(ContentCommand::Pause)
             } else {
-                video_host.component_mut().resume_from_occlusion()
+                process.send_command(ContentCommand::Resume)
             }
         } else {
             Ok(())
-        }
-    }
-
-    fn resize_video_host(&self, hwnd: HWND) {
-        if let Some(video_host) = &self.video_host {
-            if let Err(e) = video_host.resize_to_parent(video_host.hwnd(), hwnd) {
-                log::error!("Resize video host failed: {}", e);
-            }
         }
     }
 
@@ -129,12 +127,6 @@ impl Dock {
         match msg {
             WM_NCCREATE => Window::<Dock>::on_wm_nccreate(hwnd, lparam),
             WM_NCDESTROY => Window::<Dock>::on_wm_ncdestroy(hwnd),
-            WM_SIZE => {
-                if let Some(mut ptr) = Window::<Dock>::get_self_from_hwnd(hwnd) {
-                    let window = unsafe { ptr.as_mut() };
-                    window.component().resize_video_host(hwnd);
-                }
-            }
             _ => {}
         }
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }

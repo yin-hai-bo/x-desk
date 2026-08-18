@@ -219,7 +219,7 @@ Do not add the plugin-oriented shape until at least two provider implementations
 - Rename video-specific orchestration concepts where they now mean generic content.
 - Keep Media Foundation playback in-process for this phase.
 
-### Phase 3: Create Video Content Process
+### [✓] Phase 3: Create Video Content Process
 
 - Add a separate video player binary.
 - Move `VideoHost` and `VideoPlayer` responsibilities into that binary.
@@ -278,3 +278,4 @@ Each phase should be verified against these behaviors:
 - Do not let content processes own WorkerW discovery.
 - Do not move tray, config watching, occlusion, or Explorer recovery into the settings UI process.
 - Do not introduce third-party GUI libraries for Windows UI logic in the main process.
+- Do not support non-Windows desktop integration in this architecture.

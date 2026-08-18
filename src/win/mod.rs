@@ -5,6 +5,7 @@ use windows::Win32::{
     UI::Shell::{FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath},
 };
 
+mod content_process;
 mod desktop;
 mod desktop_attachment;
 mod dock;
@@ -14,6 +15,7 @@ mod menu;
 mod monitor;
 mod msg_id;
 mod occlusion;
+pub(crate) mod player;
 mod resource_ids;
 mod theme;
 mod tray_icon;

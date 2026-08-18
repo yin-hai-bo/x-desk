@@ -5,7 +5,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-#[cfg(target_os = "windows")]
 use crate::win;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -70,22 +69,9 @@ impl Config {
     }
 
     pub fn config_file_path(_app_name: &str) -> anyhow::Result<PathBuf> {
-        #[cfg(target_os = "windows")]
         let dir = win::appdata_dir()?.join("yinhaibo").join(_app_name);
-
-        #[cfg(not(target_os = "windows"))]
-        let dir = current_exe_dir()?;
-
         Ok(dir.join("config.toml"))
     }
-}
-
-#[cfg(not(target_os = "windows"))]
-fn current_exe_dir() -> anyhow::Result<PathBuf> {
-    let path = std::env::current_exe()?;
-    path.parent()
-        .map(PathBuf::from)
-        .context("Get application directory failed.")
 }
 
 #[cfg(test)]
