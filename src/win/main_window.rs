@@ -20,20 +20,19 @@ use windows::{
     core::{PCWSTR, w},
 };
 
-use crate::{
-    config::Config,
-    win::{
-        hyperlink_text::{Anchor, HorizontalAnchor, HyperLinkFont, HyperLinkText, VerticalAnchor},
-        main_ui_process, msg_id,
-        occlusion::{self, OcclusionWatcher},
-        resource_ids::IDI_APP_ICON,
-        settings_process, theme,
-        tray_icon::{TrayCommand, TrayIcon},
-        wallpaper_manager::WallpaperManager,
-        watcher::{WatchEvent, Watcher},
-        wide_string::WideString,
-        window::Window,
-    },
+use config::Config;
+
+use crate::win::{
+    hyperlink_text::{Anchor, HorizontalAnchor, HyperLinkFont, HyperLinkText, VerticalAnchor},
+    main_ui_process, msg_id,
+    occlusion::{self, OcclusionWatcher},
+    resource_ids::IDI_APP_ICON,
+    settings_process, theme,
+    tray_icon::{TrayCommand, TrayIcon},
+    wallpaper_manager::WallpaperManager,
+    watcher::{WatchEvent, Watcher},
+    wide_string::WideString,
+    window::Window,
 };
 
 const CLASS_NAME: PCWSTR = w!("YHB-XDeskMainWindow");

@@ -1,6 +1,4 @@
-mod config;
 mod logger;
-
 mod win;
 
 use anyhow::Result;

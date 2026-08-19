@@ -34,6 +34,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "config"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "toml",
+ "windows",
+]
+
+[[package]]
 name = "embed-resource"
 version = "2.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -543,11 +553,10 @@ name = "x-desk"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "config",
  "embed-resource",
  "log",
  "regex",
- "serde",
- "toml",
  "webview2-com",
  "windows",
  "windows-core",

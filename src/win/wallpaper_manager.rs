@@ -1,9 +1,7 @@
 use super::{desktop::Desktop, desktop_attachment, monitor::MonitorManager};
-use crate::{
-    config::{Config, WallpaperContentSpec, WallpaperKind},
-    win::{dock::Dock, occlusion::DockRegion, window::Window},
-};
+use crate::win::{dock::Dock, occlusion::DockRegion, window::Window};
 use anyhow::{Context, Result, anyhow, bail};
+use config::{Config, WallpaperContentSpec, WallpaperKind};
 use windows::Win32::Foundation::{HWND, RECT};
 
 pub struct WallpaperManager {
@@ -115,7 +113,6 @@ impl WallpaperManager {
             format!("{} ...", s.chars().take(max_len).collect::<String>())
         }
     }
-
 }
 
 /// 可以用索引快速访问的 [`Dock`] 列表

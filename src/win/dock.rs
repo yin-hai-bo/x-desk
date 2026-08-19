@@ -17,14 +17,13 @@ use windows::{
     core::{PCWSTR, w},
 };
 
-use crate::{
-    config::WallpaperContentSpec,
-    win::{
-        content_process::{self, ContentCommand, ContentProcessHandle},
-        wide_string::WideString,
-        win_utils,
-        window::Window,
-    },
+use config::WallpaperContentSpec;
+
+use crate::win::{
+    content_process::{self, ContentCommand, ContentProcessHandle},
+    wide_string::WideString,
+    win_utils,
+    window::Window,
 };
 
 const DOCK_CLASS_NAME: PCWSTR = w!("X-Desk-Dock-Class");

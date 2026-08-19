@@ -1,11 +1,12 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::{
-    fs,
-    path::{Path, PathBuf},
+    ffi::OsString, fs, os::windows::ffi::OsStringExt, path::{Path, PathBuf},
 };
-
-use crate::win;
+use windows::Win32::{
+    System::Com::CoTaskMemFree,
+    UI::Shell::{FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, SHGetKnownFolderPath},
+};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MonitorConfig {
@@ -70,9 +71,17 @@ impl Config {
     }
 
     pub fn config_file_path(_app_name: &str) -> anyhow::Result<PathBuf> {
-        let dir = win::appdata_dir()?.join("yinhaibo").join(_app_name);
+        let dir = appdata_dir()?.join("yinhaibo").join(_app_name);
         Ok(dir.join("config.toml"))
     }
+}
+
+fn appdata_dir() -> anyhow::Result<PathBuf> {
+    let path = unsafe { SHGetKnownFolderPath(&FOLDERID_RoamingAppData, KF_FLAG_DEFAULT, None)? };
+    let ws = unsafe { path.as_wide() };
+    let os = OsString::from_wide(ws);
+    unsafe { CoTaskMemFree(Some(path.as_ptr() as *mut _)) };
+    Ok(PathBuf::from(os))
 }
 
 #[cfg(test)]
