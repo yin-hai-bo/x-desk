@@ -102,11 +102,20 @@ impl WallpaperManager {
             attached.width,
             attached.height,
             content.kind,
-            content.source
+            Self::truncate_with_ellipsis(&content.source, 128)
         );
 
         Ok(())
     }
+
+    fn truncate_with_ellipsis(s: &str, max_len: usize) -> String {
+        if s.chars().count() <= max_len {
+            s.to_string()
+        } else {
+            format!("{} ...", s.chars().take(max_len).collect::<String>())
+        }
+    }
+
 }
 
 /// 可以用索引快速访问的 [`Dock`] 列表

@@ -11,9 +11,9 @@ use windows::{
             WindowsAndMessaging::{
                 CS_HREDRAW, CS_VREDRAW, DefWindowProcW, DispatchMessageW, GetClientRect, GetMessageW, GetSystemMetrics,
                 IDC_ARROW, KillTimer, LoadCursorW, LoadIconW, MSG, PostQuitMessage, RegisterClassExW, SM_CXSCREEN,
-                SM_CYSCREEN, SW_HIDE, SW_SHOW, SetTimer, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CLOSE,
-                WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW,
-                WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
+                SM_CYSCREEN, SW_HIDE, SetTimer, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CLOSE, WM_DESTROY,
+                WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW, WS_CAPTION,
+                WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
             },
         },
     },
@@ -24,11 +24,11 @@ use crate::{
     config::Config,
     win::{
         hyperlink_text::{Anchor, HorizontalAnchor, HyperLinkFont, HyperLinkText, VerticalAnchor},
-        msg_id,
+        main_ui_process, msg_id,
         occlusion::{self, OcclusionWatcher},
         resource_ids::IDI_APP_ICON,
         settings_process, theme,
-        tray_icon::TrayIcon,
+        tray_icon::{TrayCommand, TrayIcon},
         wallpaper_manager::WallpaperManager,
         watcher::{WatchEvent, Watcher},
         wide_string::WideString,
@@ -91,7 +91,7 @@ impl MainWindow {
         self.refresh_occlusions(hwnd);
 
         unsafe {
-            let _ = ShowWindow(hwnd, SW_SHOW);
+            let _ = ShowWindow(hwnd, SW_HIDE);
             let _ = UpdateWindow(hwnd);
         }
 
@@ -206,6 +206,16 @@ impl MainWindow {
         self.tray_icon = None;
         self.tray_icon = Some(TrayIcon::new(&self.app_name, hwnd, msg_id::TRAY_ICON_MESSAGE)?);
         Ok(())
+    }
+
+    fn handle_tray_command(&self, command: TrayCommand) {
+        match command {
+            TrayCommand::ShowMainUi => {
+                if let Err(e) = main_ui_process::launch_main_ui_process(&self.config_file_path) {
+                    log::error!("Launch main UI process failed: {:#}", e);
+                }
+            }
+        }
     }
 
     fn refresh_wallpapers(&mut self) {
@@ -326,7 +336,9 @@ impl MainWindow {
                 if let Some(ptr) = Window::<Self>::get_self_from_hwnd(hwnd) {
                     let window = unsafe { ptr.as_ref() };
                     if let Some(tray_icon) = &window.component().tray_icon {
-                        tray_icon.handle_message(hwnd, lparam);
+                        if let Some(command) = tray_icon.handle_message(hwnd, lparam) {
+                            window.component().handle_tray_command(command);
+                        }
                     }
                 }
                 return LRESULT(0);

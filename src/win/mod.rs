@@ -10,6 +10,7 @@ mod desktop;
 mod desktop_attachment;
 mod dock;
 mod hyperlink_text;
+mod main_ui_process;
 pub mod main_window;
 mod menu;
 mod monitor;

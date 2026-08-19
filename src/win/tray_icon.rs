@@ -11,7 +11,7 @@ use windows::{
             },
             WindowsAndMessaging::{
                 GetCursorPos, IDI_APPLICATION, LoadIconW, MB_ICONINFORMATION, MB_OK, MessageBoxW, PostQuitMessage,
-                SW_RESTORE, SetForegroundWindow, ShowWindow, WM_CONTEXTMENU, WM_LBUTTONDBLCLK, WM_RBUTTONUP,
+                SetForegroundWindow, WM_CONTEXTMENU, WM_LBUTTONDBLCLK, WM_RBUTTONUP,
             },
         },
     },
@@ -30,6 +30,10 @@ const TRAY_ICON_ID: u32 = 1;
 pub(super) struct TrayIcon {
     data: NOTIFYICONDATAW,
     app_name: String,
+}
+
+pub(super) enum TrayCommand {
+    ShowMainUi,
 }
 
 impl TrayIcon {
@@ -69,17 +73,20 @@ impl TrayIcon {
         })
     }
 
-    pub fn handle_message(&self, window: HWND, lparam: LPARAM) {
+    pub fn handle_message(&self, window: HWND, lparam: LPARAM) -> Option<TrayCommand> {
         match lparam.0 as u32 & 0xffff {
-            WM_LBUTTONDBLCLK => Self::show_main_window(window),
+            WM_LBUTTONDBLCLK => Some(TrayCommand::ShowMainUi),
             WM_RBUTTONUP | WM_CONTEXTMENU => {
-                let _ = self.show_context_menu(window);
+                if let Ok(command) = self.show_context_menu(window) {
+                    return command;
+                }
+                None
             }
-            _ => {}
+            _ => None,
         }
     }
 
-    fn show_context_menu(&self, window: HWND) -> Result<()> {
+    fn show_context_menu(&self, window: HWND) -> Result<Option<TrayCommand>> {
         let menu = Menu::load(IDR_TRAY_MENU)?;
         let popup_menu = menu.get_sub_menu()?;
         Menu::set_default_item(popup_menu, MENU_SHOW_MAIN_WINDOW);
@@ -91,20 +98,18 @@ impl TrayIcon {
         }
 
         let command = Menu::track_popup_menu(popup_menu, cursor.x, cursor.y, window);
-        match command {
-            MENU_SHOW_MAIN_WINDOW => Self::show_main_window(window),
-            MENU_ABOUT => self.show_about(window),
-            MENU_EXIT => unsafe { PostQuitMessage(0) },
-            _ => {}
-        };
-        Ok(())
-    }
-
-    fn show_main_window(window: HWND) {
-        unsafe {
-            let _ = ShowWindow(window, SW_RESTORE);
-            let _ = SetForegroundWindow(window);
-        }
+        Ok(match command {
+            MENU_SHOW_MAIN_WINDOW => Some(TrayCommand::ShowMainUi),
+            MENU_ABOUT => {
+                self.show_about(window);
+                None
+            }
+            MENU_EXIT => {
+                unsafe { PostQuitMessage(0) };
+                None
+            }
+            _ => None,
+        })
     }
 
     fn show_about(&self, window: HWND) {
