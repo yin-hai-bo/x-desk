@@ -42,7 +42,107 @@ use crate::{
 
 const WEBVIEW_WINDOW_CLASS_NAME: PCWSTR = w!("X-Desk-WebView-Class");
 const WEBVIEW_STOP_MESSAGE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 1;
+const WEBVIEW_PAUSE_MESSAGE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 2;
+const WEBVIEW_RESUME_MESSAGE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 3;
 static WEBVIEW_WINDOW_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
+
+const INSTALL_MEDIA_CONTROL_SCRIPT: &str = r#"
+(() => {
+  if (window.__xDeskMediaControlInstalled) {
+    return;
+  }
+
+  window.__xDeskMediaControlInstalled = true;
+  window.__xDeskOccluded = false;
+
+  const pauseManagedVideos = (root) => {
+    root.querySelectorAll?.('video').forEach((video) => {
+      if (!video.paused) {
+        video.dataset.xDeskPausedForOcclusion = 'true';
+        video.pause();
+      }
+    });
+  };
+
+  const resumeManagedVideos = (root) => {
+    root
+      .querySelectorAll?.('video[data-x-desk-paused-for-occlusion="true"]')
+      .forEach((video) => {
+        delete video.dataset.xDeskPausedForOcclusion;
+        video.play().catch(() => {});
+      });
+  };
+
+  const propagateOcclusion = (occluded) => {
+    document.querySelectorAll('iframe').forEach((frame) => {
+      frame.contentWindow?.postMessage(
+        { type: 'x-desk-set-occluded', occluded },
+        '*'
+      );
+    });
+  };
+
+  window.__xDeskSetOccluded = (occluded) => {
+    window.__xDeskOccluded = !!occluded;
+    if (window.__xDeskOccluded) {
+      pauseManagedVideos(document);
+    } else {
+      resumeManagedVideos(document);
+    }
+    propagateOcclusion(window.__xDeskOccluded);
+  };
+
+  document.addEventListener(
+    'play',
+    (event) => {
+      if (!window.__xDeskOccluded) {
+        return;
+      }
+      if (event.target instanceof HTMLVideoElement) {
+        event.target.dataset.xDeskPausedForOcclusion = 'true';
+        event.target.pause();
+      }
+    },
+    true
+  );
+
+  new MutationObserver((mutations) => {
+    if (!window.__xDeskOccluded) {
+      return;
+    }
+    for (const mutation of mutations) {
+      mutation.addedNodes.forEach((node) => {
+        if (!(node instanceof Element)) {
+          return;
+        }
+        if (node instanceof HTMLVideoElement) {
+          pauseManagedVideos(node.parentElement ?? document);
+          return;
+        }
+        pauseManagedVideos(node);
+      });
+    }
+  }).observe(document.documentElement, { childList: true, subtree: true });
+
+  window.addEventListener('message', (event) => {
+    if (event.data?.type === 'x-desk-set-occluded') {
+      window.__xDeskSetOccluded(event.data.occluded);
+    }
+  });
+})();
+"#;
+
+const PAUSE_VIDEOS_SCRIPT: &str = r#"
+(() => {
+  window.__xDeskSetOccluded?.(true);
+})();
+"#;
+
+const RESUME_VIDEOS_SCRIPT: &str = r#"
+(() => {
+  window.__xDeskSetOccluded?.(false);
+})();
+"#;
 
 pub(crate) fn run_webview() -> Result<()> {
     logger::init();
@@ -56,7 +156,7 @@ pub(crate) fn run_webview() -> Result<()> {
     let hwnd = window.hwnd();
     window.component_mut().initialize(hwnd)?;
     writeln!(pipe, "WindowReady {}", hwnd.0 as isize).context("Send WindowReady failed")?;
-    start_command_thread(pipe, hwnd);
+    start_command_thread(pipe, hwnd, args.respond_to_media_control_commands);
     run_message_loop()
 }
 
@@ -103,6 +203,7 @@ impl WebViewWindow {
                 let _ = settings.SetAreDevToolsEnabled(false);
             }
             self.apply_virtual_host_mappings(&webview)?;
+            self.install_media_control_script(&webview)?;
             controller
                 .SetIsVisible(true)
                 .context("Show WebView2 controller failed")?;
@@ -124,6 +225,52 @@ impl WebViewWindow {
             }
         }
         .context("Navigate WebView2 failed")
+    }
+
+    fn pause_videos_for_occlusion(&self) -> Result<()> {
+        self.execute_script(PAUSE_VIDEOS_SCRIPT)
+            .context("Pause WebView videos failed")?;
+        #[cfg(debug_assertions)]
+        log::debug!("Executed WebView video pause script");
+        Ok(())
+    }
+
+    fn resume_videos_from_occlusion(&self) -> Result<()> {
+        self.execute_script(RESUME_VIDEOS_SCRIPT)
+            .context("Resume WebView videos failed")?;
+        #[cfg(debug_assertions)]
+        log::debug!("Executed WebView video resume script");
+        Ok(())
+    }
+
+    fn execute_script(&self, script: &str) -> Result<()> {
+        let webview = self.webview.as_ref().context("WebView2 is not initialized")?.clone();
+        let script = script.to_string();
+        ExecuteScriptCompletedHandler::wait_for_async_operation(
+            Box::new(move |handler| unsafe {
+                let script = CoTaskMemPWSTR::from(script.as_str());
+                webview
+                    .ExecuteScript(*script.as_ref().as_pcwstr(), &handler)
+                    .map_err(webview2_com::Error::WindowsError)
+            }),
+            Box::new(|error_code, _result| error_code),
+        )?;
+        Ok(())
+    }
+
+    unsafe fn install_media_control_script(&self, webview: &ICoreWebView2) -> Result<()> {
+        let webview = webview.clone();
+        let script = INSTALL_MEDIA_CONTROL_SCRIPT.to_string();
+        AddScriptToExecuteOnDocumentCreatedCompletedHandler::wait_for_async_operation(
+            Box::new(move |handler| unsafe {
+                let script = CoTaskMemPWSTR::from(script.as_str());
+                webview
+                    .AddScriptToExecuteOnDocumentCreated(*script.as_ref().as_pcwstr(), &handler)
+                    .map_err(webview2_com::Error::WindowsError)
+            }),
+            Box::new(|error_code, _script_id| error_code),
+        )?;
+        Ok(())
     }
 
     unsafe fn apply_virtual_host_mappings(&self, webview: &ICoreWebView2) -> Result<()> {
@@ -188,6 +335,26 @@ impl WebViewWindow {
                 }
                 return LRESULT(0);
             }
+            WEBVIEW_PAUSE_MESSAGE => {
+                #[cfg(debug_assertions)]
+                log::debug!("Handle WebView pause message, hwnd={:?}", hwnd);
+                if let Some(ptr) = Window::<WebViewWindow>::get_self_from_hwnd(hwnd) {
+                    if let Err(e) = unsafe { ptr.as_ref() }.component().pause_videos_for_occlusion() {
+                        log::error!("Pause WebView videos failed: {}", e);
+                    }
+                }
+                return LRESULT(0);
+            }
+            WEBVIEW_RESUME_MESSAGE => {
+                #[cfg(debug_assertions)]
+                log::debug!("Handle WebView resume message, hwnd={:?}", hwnd);
+                if let Some(ptr) = Window::<WebViewWindow>::get_self_from_hwnd(hwnd) {
+                    if let Err(e) = unsafe { ptr.as_ref() }.component().resume_videos_from_occlusion() {
+                        log::error!("Resume WebView videos failed: {}", e);
+                    }
+                }
+                return LRESULT(0);
+            }
             WM_DESTROY | WEBVIEW_STOP_MESSAGE => {
                 unsafe { PostQuitMessage(0) };
                 return LRESULT(0);
@@ -233,7 +400,7 @@ fn create_controller(environment: &ICoreWebView2Environment, hwnd: HWND) -> Resu
     Ok(rx.recv().context("Receive WebView2 controller failed")??)
 }
 
-fn start_command_thread(pipe: File, hwnd: HWND) {
+fn start_command_thread(pipe: File, hwnd: HWND, respond_to_media_control_commands: bool) {
     let hwnd = hwnd.0 as isize;
     thread::spawn(move || {
         let mut reader = BufReader::new(pipe);
@@ -241,20 +408,40 @@ fn start_command_thread(pipe: File, hwnd: HWND) {
             let mut line = String::new();
             match reader.read_line(&mut line) {
                 Ok(0) => break,
-                Ok(_) => post_command(HWND(hwnd as _), line.trim()),
+                Ok(_) => {
+                    let command = line.trim();
+                    #[cfg(debug_assertions)]
+                    log::debug!("Received WebView content command: {}", command);
+                    post_command(HWND(hwnd as _), command, respond_to_media_control_commands);
+                }
                 Err(error) => {
                     log::error!("Read content command failed: {}", error);
                     break;
                 }
             }
         }
-        post_command(HWND(hwnd as _), "Stop");
+        post_command(HWND(hwnd as _), "Stop", true);
     });
 }
 
-fn post_command(hwnd: HWND, command: &str) {
+fn post_command(hwnd: HWND, command: &str, respond_to_media_control_commands: bool) {
+    if !respond_to_media_control_commands && matches!(command, "Pause" | "Resume") {
+        #[cfg(debug_assertions)]
+        log::debug!("Ignored WebView media control command: {}", command);
+        return;
+    }
+
     match command {
-        "Pause" | "Resume" => {}
+        "Pause" => unsafe {
+            #[cfg(debug_assertions)]
+            log::debug!("Post WebView pause message, hwnd={:?}", hwnd);
+            let _ = PostMessageW(Some(hwnd), WEBVIEW_PAUSE_MESSAGE, WPARAM(0), LPARAM(0));
+        },
+        "Resume" => unsafe {
+            #[cfg(debug_assertions)]
+            log::debug!("Post WebView resume message, hwnd={:?}", hwnd);
+            let _ = PostMessageW(Some(hwnd), WEBVIEW_RESUME_MESSAGE, WPARAM(0), LPARAM(0));
+        },
         "Stop" => unsafe {
             let _ = PostMessageW(Some(hwnd), WEBVIEW_STOP_MESSAGE, WPARAM(0), LPARAM(0));
         },
@@ -407,6 +594,7 @@ fn path_to_file_url(path: &str) -> String {
 struct WebViewArgs {
     pipe_name: String,
     source: String,
+    respond_to_media_control_commands: bool,
 }
 
 impl WebViewArgs {
@@ -414,17 +602,34 @@ impl WebViewArgs {
         let mut args = std::env::args().skip(1);
         let mut pipe_name = None;
         let mut source = None;
+        let mut respond_to_media_control_commands = true;
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--pipe" => pipe_name = args.next(),
                 "--source" => source = args.next(),
+                "--respond-to-media-control-commands" => {
+                    respond_to_media_control_commands = parse_bool_arg(
+                        args.next()
+                            .context("Missing --respond-to-media-control-commands value")?
+                            .as_str(),
+                    )?
+                }
                 _ => bail!("Unknown x-desk-webview argument: {}", arg),
             }
         }
         Ok(Self {
             pipe_name: pipe_name.context("Missing --pipe")?,
             source: source.context("Missing --source")?,
+            respond_to_media_control_commands,
         })
+    }
+}
+
+fn parse_bool_arg(value: &str) -> Result<bool> {
+    match value {
+        "true" | "1" | "yes" | "on" => Ok(true),
+        "false" | "0" | "no" | "off" => Ok(false),
+        _ => bail!("Invalid boolean value: {}", value),
     }
 }
 

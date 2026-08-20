@@ -1,7 +1,10 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::{
-    ffi::OsString, fs, os::windows::ffi::OsStringExt, path::{Path, PathBuf},
+    ffi::OsString,
+    fs,
+    os::windows::ffi::OsStringExt,
+    path::{Path, PathBuf},
 };
 use windows::Win32::{
     System::Com::CoTaskMemFree,

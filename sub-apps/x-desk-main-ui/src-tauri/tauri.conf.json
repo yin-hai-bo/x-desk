@@ -12,9 +12,14 @@
   "app": {
     "windows": [
       {
-        "title": "x-desk-main-ui",
-        "width": 800,
-        "height": 600
+        "title": "X-Desk",
+        "width": 1080,
+        "height": 800,
+        "resizable": false,
+        "decorations": false,
+        "maximizable": false,
+        "fullscreen": false,
+        "center": true
       }
     ],
     "security": {
@@ -23,6 +28,12 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all"
+    "targets": ["nsis"],
+    "windows": {
+        "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "displayLanguageSelector": true
+      }
+    }
   }
 }

@@ -94,8 +94,20 @@ impl Dock {
         self.occluded = occluded;
         if let Some(process) = self.content_process.as_mut() {
             if occluded {
+                #[cfg(debug_assertions)]
+                log::debug!(
+                    "Send Pause to content process, pid={}, hwnd={:?}",
+                    process.process_id(),
+                    process.hwnd()
+                );
                 process.send_command(ContentCommand::Pause)
             } else {
+                #[cfg(debug_assertions)]
+                log::debug!(
+                    "Send Resume to content process, pid={}, hwnd={:?}",
+                    process.process_id(),
+                    process.hwnd()
+                );
                 process.send_command(ContentCommand::Resume)
             }
         } else {
