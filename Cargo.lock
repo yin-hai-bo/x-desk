@@ -4996,11 +4996,15 @@ dependencies = [
 name = "x-desk-main-ui"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "config",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
+ "webview2-com 0.38.2",
+ "windows-core 0.61.2",
 ]
 
 [[package]]

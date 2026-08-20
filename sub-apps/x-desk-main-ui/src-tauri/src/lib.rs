@@ -1,4 +1,19 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+use std::path::PathBuf;
+
+use tauri::Manager;
+#[cfg(all(windows, not(debug_assertions)))]
+use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
+#[cfg(all(windows, not(debug_assertions)))]
+use windows_core::Interface;
+
+const APP_NAME: &str = "x-desk";
+
+struct MainUiState {
+    config_file_path: PathBuf,
+    config: config::Config,
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -9,11 +24,70 @@ fn exit_main_ui(app: tauri::AppHandle) {
     app.exit(0);
 }
 
+#[tauri::command]
+fn config_file_path(state: tauri::State<MainUiState>) -> String {
+    state.config_file_path.display().to_string()
+}
+
+#[tauri::command]
+fn has_wallpaper_config(state: tauri::State<MainUiState>) -> bool {
+    state.config.content_for_monitor(0).is_some()
+}
+
+fn load_main_ui_state() -> anyhow::Result<MainUiState> {
+    let config_file_path = config::Config::config_file_path(APP_NAME)?;
+    let config = config::Config::load_from_file(&config_file_path)?;
+
+    Ok(MainUiState {
+        config_file_path,
+        config,
+    })
+}
+
+#[cfg(all(windows, not(debug_assertions)))]
+fn disable_release_webview_features(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(webview) = app.get_webview_window("main") {
+        webview.with_webview(|platform_webview| {
+            let controller = platform_webview.controller();
+            let result = (|| unsafe {
+                let settings = controller.CoreWebView2()?.Settings()?;
+                settings.SetAreDevToolsEnabled(false)?;
+                settings.SetAreDefaultContextMenusEnabled(false)?;
+
+                if let Ok(settings3) = settings.cast::<ICoreWebView2Settings3>() {
+                    settings3.SetAreBrowserAcceleratorKeysEnabled(false)?;
+                }
+
+                windows_core::Result::Ok(())
+            })();
+
+            if let Err(error) = result {
+                eprintln!("Disable release WebView features failed: {error}");
+            }
+        })?;
+    }
+
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, exit_main_ui])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            exit_main_ui,
+            config_file_path,
+            has_wallpaper_config
+        ])
+        .setup(|_app| {
+            _app.manage(load_main_ui_state()?);
+
+            #[cfg(all(windows, not(debug_assertions)))]
+            disable_release_webview_features(_app)?;
+
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
