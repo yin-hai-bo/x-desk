@@ -2,11 +2,10 @@ use std::{ffi::c_void, ptr::NonNull};
 
 use windows::{
     Win32::{
-        Foundation::{FALSE, GetLastError, HWND, LPARAM, SetLastError, WIN32_ERROR},
-        Graphics::Gdi::UpdateWindow,
+        Foundation::{FALSE, HWND, LPARAM},
         UI::WindowsAndMessaging::{
-            CREATESTRUCTW, CreateWindowExW, DestroyWindow, GWLP_USERDATA, GetWindowLongPtrW, GetWindowTextLengthW,
-            GetWindowTextW, IsWindow, SHOW_WINDOW_CMD, SetWindowLongPtrW, ShowWindow,
+            CREATESTRUCTW, CreateWindowExW, DestroyWindow, GWLP_USERDATA, GetWindowLongPtrW, IsWindow,
+            SetWindowLongPtrW,
         },
     },
     core::PCWSTR,
@@ -117,15 +116,6 @@ impl<T> Window<T> {
         NonNull::new(ptr as *mut Self)
     }
 
-    pub fn show_window(&self, cmd: SHOW_WINDOW_CMD) -> bool {
-        unsafe { ShowWindow(self.hwnd, cmd) != FALSE }
-    }
-
-    #[allow(dead_code)]
-    pub fn update_window(&self) -> bool {
-        unsafe { UpdateWindow(self.hwnd) != FALSE }
-    }
-
     pub fn destroy_window(&mut self) -> anyhow::Result<()> {
         if self.hwnd.is_invalid() {
             anyhow::bail!("Cannot destroy an invalid window");
@@ -139,43 +129,6 @@ impl<T> Window<T> {
             self.hwnd = HWND::default();
         }
         Ok(())
-    }
-
-    pub fn is_window(&self) -> bool {
-        if self.hwnd.is_invalid() {
-            return false;
-        }
-        unsafe { IsWindow(Some(self.hwnd)) != FALSE }
-    }
-
-    pub fn get_window_text(&self) -> anyhow::Result<Vec<u16>> {
-        if !self.is_window() {
-            anyhow::bail!("Cannot get window text from an invalid window");
-        }
-        unsafe {
-            SetLastError(WIN32_ERROR(0));
-            let len = GetWindowTextLengthW(self.hwnd);
-            if len <= 0 {
-                let error_code = GetLastError();
-                if error_code.is_err() {
-                    anyhow::bail!("GetWindowTextLengthW() failed with error #{}", error_code.0);
-                } else {
-                    return Ok(vec![0]);
-                }
-            }
-
-            let mut text = vec![0u16; (len + 1) as usize];
-            SetLastError(WIN32_ERROR(0));
-            let count = GetWindowTextW(self.hwnd, &mut text);
-            if count == 0 {
-                let error_code = GetLastError();
-                if error_code.is_err() && len > 0 {
-                    anyhow::bail!("GetWindowTextW() failed with error #{}", error_code.0);
-                }
-            }
-            text.truncate(count as usize + 1);
-            return Ok(text);
-        }
     }
 }
 

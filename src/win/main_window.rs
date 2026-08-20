@@ -1,21 +1,14 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-use anyhow::{Context, anyhow, bail};
+use anyhow::{Context, anyhow};
 use windows::{
     Win32::{
-        Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, RECT, WPARAM},
-        Graphics::Gdi::{CreateSolidBrush, HDC, UpdateWindow},
+        Foundation::{HINSTANCE, HWND, LPARAM, LRESULT, WPARAM},
         System::LibraryLoader::GetModuleHandleW,
-        UI::{
-            HiDpi::{GetDpiForSystem, GetDpiForWindow},
-            Shell::ShellExecuteW,
-            WindowsAndMessaging::{
-                CS_HREDRAW, CS_VREDRAW, DefWindowProcW, DispatchMessageW, GetClientRect, GetMessageW, GetSystemMetrics,
-                IDC_ARROW, KillTimer, LoadCursorW, LoadIconW, MSG, PostQuitMessage, RegisterClassExW, SM_CXSCREEN,
-                SM_CYSCREEN, SW_HIDE, SW_SHOWNORMAL, SetTimer, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CLOSE,
-                WM_DESTROY, WM_ERASEBKGND, WM_NCCREATE, WM_NCDESTROY, WM_SETTINGCHANGE, WM_TIMER, WNDCLASSEXW,
-                WS_CAPTION, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU,
-            },
+        UI::WindowsAndMessaging::{
+            DefWindowProcW, DispatchMessageW, GetMessageW, KillTimer, MSG, PostQuitMessage, RegisterClassExW, SetTimer,
+            TranslateMessage, WINDOW_EX_STYLE, WINDOW_STYLE, WM_DESTROY, WM_NCCREATE, WM_NCDESTROY, WM_TIMER,
+            WNDCLASSEXW,
         },
     },
     core::{PCWSTR, w},
@@ -24,24 +17,15 @@ use windows::{
 use config::Config;
 
 use crate::win::{
-    hyperlink_text::{Anchor, HorizontalAnchor, HyperLinkFont, HyperLinkText, VerticalAnchor},
     main_ui_process, msg_id,
     occlusion::{self, OcclusionWatcher},
-    resource_ids::IDI_APP_ICON,
-    theme,
     tray_icon::{TrayCommand, TrayIcon},
     wallpaper_manager::WallpaperManager,
     watcher::{WatchEvent, Watcher},
-    wide_string::WideString,
     window::Window,
 };
 
 const CLASS_NAME: PCWSTR = w!("YHB-XDeskMainWindow");
-const DEFAULT_WINDOW_WIDTH: i32 = 480;
-const DEFAULT_WINDOW_HEIGHT: i32 = 320;
-const CONFIG_LINK_MARGIN_RIGHT: i32 = 24;
-const CONFIG_LINK_MARGIN_BOTTOM: i32 = 16;
-const DEFAULT_DPI: u32 = 96;
 const WORKER_W_RESET_TIMER_ID: usize = 1;
 const WORKER_W_RESET_DELAY_MS: u32 = 500;
 const OCCLUSION_CHECK_TIMER_ID: usize = 2;
@@ -57,7 +41,6 @@ pub struct MainWindow {
     reset_scheduler: WallpaperResetScheduler,
     occlusion_check_pending: bool,
     tray_icon: Option<TrayIcon>,
-    config_dir_hyper_link: Option<Box<Window<HyperLinkText>>>,
 }
 
 impl MainWindow {
@@ -75,25 +58,17 @@ impl MainWindow {
             reset_scheduler: WallpaperResetScheduler::default(),
             occlusion_check_pending: false,
             tray_icon: None,
-            config_dir_hyper_link: None,
         };
-        let window = Self::create_window(instance, WideString::new(app_name).as_pcwstr(), component)?;
+        let window = Self::create_window(instance, component)?;
         Ok(window)
     }
 
     pub fn run(&mut self, hwnd: HWND) -> anyhow::Result<()> {
-        theme::apply_system_theme(hwnd);
-        self.config_dir_hyper_link = self.create_config_dir_hyper_link(hwnd).ok();
         self.recreate_tray_icon(hwnd)?;
         self.refresh_wallpapers();
         self.recreate_watcher(hwnd);
         self.recreate_occlusion_watcher(hwnd);
         self.refresh_occlusions(hwnd);
-
-        unsafe {
-            let _ = ShowWindow(hwnd, SW_HIDE);
-            let _ = UpdateWindow(hwnd);
-        }
 
         let mut message = MSG::default();
         loop {
@@ -115,18 +90,17 @@ impl MainWindow {
 
     fn register_class(instance: HINSTANCE) -> anyhow::Result<()> {
         unsafe {
-            let icon = LoadIconW(Some(instance.into()), PCWSTR(IDI_APP_ICON as usize as *const u16))?;
             let window_class = WNDCLASSEXW {
                 cbSize: std::mem::size_of::<WNDCLASSEXW>() as u32,
-                style: CS_HREDRAW | CS_VREDRAW,
+                style: Default::default(),
                 lpfnWndProc: Some(Self::window_proc),
                 cbClsExtra: 0,
                 cbWndExtra: 0,
                 hInstance: instance.into(),
-                hIcon: icon,
-                hIconSm: icon,
-                hCursor: LoadCursorW(None, IDC_ARROW).unwrap_or_default(),
-                hbrBackground: CreateSolidBrush(theme::background_color()),
+                hIcon: Default::default(),
+                hIconSm: Default::default(),
+                hCursor: Default::default(),
+                hbrBackground: Default::default(),
                 lpszMenuName: PCWSTR::null(),
                 lpszClassName: CLASS_NAME,
             };
@@ -137,68 +111,22 @@ impl MainWindow {
         }
     }
 
-    fn create_window(instance: HINSTANCE, title: PCWSTR, component: Self) -> anyhow::Result<Box<Window<Self>>> {
-        let dpi = unsafe { GetDpiForSystem() };
-        let window_width = Self::scale_for_dpi(DEFAULT_WINDOW_WIDTH, dpi);
-        let window_height = Self::scale_for_dpi(DEFAULT_WINDOW_HEIGHT, dpi);
-        let screen_width = unsafe { GetSystemMetrics(SM_CXSCREEN) };
-        let screen_height = unsafe { GetSystemMetrics(SM_CYSCREEN) };
-        let window_x = (screen_width - window_width) / 2;
-        let window_y = (screen_height - window_height) / 2;
+    fn create_window(instance: HINSTANCE, component: Self) -> anyhow::Result<Box<Window<Self>>> {
         Window::create(
             WINDOW_EX_STYLE(0),
             CLASS_NAME,
-            title,
-            WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-            window_x,
-            window_y,
-            window_width,
-            window_height,
-            None, // HWND of parent
-            None, // HMENU
+            PCWSTR::null(),
+            WINDOW_STYLE(0),
+            0,
+            0,
+            0,
+            0,
+            None,
+            None,
             Some(instance.into()),
             component,
         )
         .context("CreateWindowEx() failed")
-    }
-
-    fn scale_for_dpi(value: i32, dpi: u32) -> i32 {
-        (value * dpi.max(DEFAULT_DPI) as i32 + (DEFAULT_DPI as i32 / 2)) / DEFAULT_DPI as i32
-    }
-
-    fn create_config_dir_hyper_link(&self, hwnd: HWND) -> anyhow::Result<Box<Window<HyperLinkText>>> {
-        let config_file_path = self.config_file_path.clone();
-        let mut client_rect = RECT::default();
-        unsafe { GetClientRect(hwnd, &mut client_rect)? };
-        let dpi = unsafe { GetDpiForWindow(hwnd) };
-        let margin_right = Self::scale_for_dpi(CONFIG_LINK_MARGIN_RIGHT, dpi);
-        let margin_bottom = Self::scale_for_dpi(CONFIG_LINK_MARGIN_BOTTOM, dpi);
-        HyperLinkText::create(
-            hwnd,
-            "Open settings",
-            Anchor::new(
-                HorizontalAnchor::Right(client_rect.right - margin_right),
-                VerticalAnchor::Bottom(client_rect.bottom - margin_bottom),
-            ),
-            HyperLinkFont::new("Segoe UI", 12),
-            Some(move || {
-                if let Err(e) = Self::open_config_file(&config_file_path) {
-                    log::error!("Open settings failed: {:#}", e);
-                }
-            }),
-        )
-    }
-
-    fn open_config_file(path: &Path) -> anyhow::Result<()> {
-        let path = WideString::from_os_string(path.as_os_str());
-        let result = unsafe { ShellExecuteW(None, w!("open"), path.as_pcwstr(), None, None, SW_SHOWNORMAL) };
-        if result.0 as isize <= 32 {
-            bail!(
-                "Open configuration file failed, ShellExecuteW returned {}",
-                result.0 as isize
-            );
-        }
-        Ok(())
     }
 
     fn recreate_watcher(&mut self, hwnd: HWND) {
@@ -361,14 +289,6 @@ impl MainWindow {
                 }
                 return LRESULT(0);
             }
-            WM_ERASEBKGND => {
-                unsafe { theme::paint_background(hwnd, HDC(wparam.0 as *mut _)) };
-                return LRESULT(1);
-            }
-            WM_SETTINGCHANGE => {
-                theme::system_theme_changed(hwnd);
-                return LRESULT(0);
-            }
             WM_TIMER => {
                 if wparam.0 == WORKER_W_RESET_TIMER_ID {
                     if let Some(mut ptr) = Window::<Self>::get_self_from_hwnd(hwnd) {
@@ -386,12 +306,6 @@ impl MainWindow {
                     }
                     return LRESULT(0);
                 }
-            }
-            WM_CLOSE => {
-                unsafe {
-                    let _ = ShowWindow(hwnd, SW_HIDE);
-                }
-                return LRESULT(0);
             }
             WM_DESTROY => {
                 if let Some(mut ptr) = Window::<Self>::get_self_from_hwnd(hwnd) {

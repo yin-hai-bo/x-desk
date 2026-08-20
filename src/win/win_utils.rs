@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail};
 use windows::{
     Win32::{
         Foundation::{COLORREF, FALSE, HWND, LPARAM, RECT, TRUE},
-        Graphics::Gdi::{BeginPaint, EndPaint, HDC, HGDIOBJ, PAINTSTRUCT, SelectObject},
+        Graphics::Gdi::{HDC, HGDIOBJ, SelectObject},
         UI::WindowsAndMessaging::{
             EnumChildWindows, GWL_EXSTYLE, GWL_STYLE, GetWindowLongPtrW, IsWindow, LWA_ALPHA, SET_WINDOW_POS_FLAGS,
             SetLayeredWindowAttributes, SetParent, SetWindowLongPtrW, SetWindowPos, WINDOW_EX_STYLE,
@@ -122,39 +122,6 @@ pub fn set_window_pos(
 
 pub fn set_parent(hwnd: HWND, parent: Option<HWND>) -> Result<HWND> {
     unsafe { SetParent(hwnd, parent).context("SetParent() failed") }
-}
-
-pub struct PaintDC {
-    hwnd: HWND,
-    dc: HDC,
-    ps: PAINTSTRUCT,
-}
-
-impl PaintDC {
-    pub fn new(hwnd: HWND) -> Result<Self> {
-        let mut ps = unsafe { std::mem::zeroed::<PAINTSTRUCT>() };
-        let dc = unsafe { BeginPaint(hwnd, &mut ps) };
-        if dc.is_invalid() {
-            return Err(Error::from_thread().into());
-        }
-        Ok(Self { hwnd, dc, ps })
-    }
-}
-
-impl Deref for PaintDC {
-    type Target = HDC;
-
-    fn deref(&self) -> &Self::Target {
-        &self.dc
-    }
-}
-
-impl Drop for PaintDC {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = EndPaint(self.hwnd, &mut self.ps);
-        }
-    }
 }
 
 #[allow(dead_code)]
