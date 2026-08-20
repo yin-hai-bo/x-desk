@@ -37,10 +37,6 @@ path = "src/processes/x-desk-player.rs"
 name = "x-desk-webview"
 path = "src/processes/x-desk-webview.rs"
 
-[[bin]]
-name = "x-desk-settings"
-path = "src/processes/x-desk-settings.rs"
-
 [dependencies]
 anyhow = { workspace = true }
 config = { path = "crates/config" }

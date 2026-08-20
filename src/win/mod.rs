@@ -11,8 +11,6 @@ mod msg_id;
 mod occlusion;
 pub(crate) mod player;
 mod resource_ids;
-pub(crate) mod settings;
-mod settings_process;
 mod theme;
 mod tray_icon;
 mod video_host;
