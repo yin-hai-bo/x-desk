@@ -60,6 +60,34 @@ impl Config {
             .filter(|source| !source.is_empty())
     }
 
+    pub fn set_webview_monitor_source(&mut self, index: usize, source: String, preview_source: Option<String>) {
+        self.ensure_monitor_entry(index);
+        self.monitors[index] = MonitorConfig {
+            kind: WallpaperKind::WebView,
+            source,
+            preview_source: preview_source.filter(|source| !source.trim().is_empty()),
+        };
+    }
+
+    pub fn clear_monitor_source(&mut self, index: usize) {
+        self.ensure_monitor_entry(index);
+        self.monitors[index] = MonitorConfig {
+            kind: WallpaperKind::WebView,
+            source: String::new(),
+            preview_source: None,
+        };
+    }
+
+    fn ensure_monitor_entry(&mut self, index: usize) {
+        while self.monitors.len() <= index {
+            self.monitors.push(MonitorConfig {
+                kind: WallpaperKind::WebView,
+                source: String::new(),
+                preview_source: None,
+            });
+        }
+    }
+
     pub fn load_from_file<P>(path: &P) -> anyhow::Result<Self>
     where
         P: AsRef<Path>,
@@ -210,6 +238,86 @@ previewSource = "C:\\videos\\one.mp4"
 
         assert_eq!(config.preview_source_for_monitor(0), Some("C:\\videos\\one.mp4"));
         let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn set_webview_monitor_source_pads_missing_entries() {
+        let mut config = Config::default();
+
+        config.set_webview_monitor_source(
+            2,
+            "<html></html>".to_string(),
+            Some("C:\\videos\\three.mp4".to_string()),
+        );
+
+        assert_eq!(config.content_for_monitor(0), None);
+        assert_eq!(config.content_for_monitor(1), None);
+        assert_eq!(
+            config.content_for_monitor(2),
+            Some(WallpaperContentSpec {
+                kind: WallpaperKind::WebView,
+                source: "<html></html>".to_string(),
+            })
+        );
+        assert_eq!(config.preview_source_for_monitor(2), Some("C:\\videos\\three.mp4"));
+    }
+
+    #[test]
+    fn set_webview_monitor_source_discards_empty_preview_source() {
+        let mut config = Config::default();
+
+        config.set_webview_monitor_source(0, "C:\\pages\\index.html".to_string(), Some("   ".to_string()));
+
+        assert_eq!(config.preview_source_for_monitor(0), None);
+    }
+
+    #[test]
+    fn clear_monitor_source_preserves_index_as_disabled_webview_entry() {
+        let mut config = Config {
+            monitors: vec![MonitorConfig {
+                kind: WallpaperKind::WebView,
+                source: "C:\\pages\\index.html".to_string(),
+                preview_source: Some("C:\\pages\\index.html".to_string()),
+            }],
+        };
+
+        config.clear_monitor_source(0);
+
+        assert_eq!(config.content_for_monitor(0), None);
+        assert_eq!(config.preview_source_for_monitor(0), None);
+        assert_eq!(config.monitors.len(), 1);
+        assert_eq!(config.monitors[0].kind, WallpaperKind::WebView);
+        assert_eq!(config.monitors[0].source, "");
+    }
+
+    #[test]
+    fn clear_monitor_source_preserves_entries_after_cleared_index() {
+        let mut config = Config {
+            monitors: vec![
+                MonitorConfig {
+                    kind: WallpaperKind::WebView,
+                    source: "C:\\pages\\one.html".to_string(),
+                    preview_source: Some("C:\\pages\\one.html".to_string()),
+                },
+                MonitorConfig {
+                    kind: WallpaperKind::WebView,
+                    source: "C:\\pages\\two.html".to_string(),
+                    preview_source: Some("C:\\pages\\two.html".to_string()),
+                },
+            ],
+        };
+
+        config.clear_monitor_source(0);
+
+        assert_eq!(
+            config.content_for_monitor(1),
+            Some(WallpaperContentSpec {
+                kind: WallpaperKind::WebView,
+                source: "C:\\pages\\two.html".to_string(),
+            })
+        );
+        assert_eq!(config.preview_source_for_monitor(1), Some("C:\\pages\\two.html"));
+        assert_eq!(config.monitors.len(), 2);
     }
 
     fn temp_config_path() -> PathBuf {
