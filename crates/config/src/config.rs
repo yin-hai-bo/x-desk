@@ -12,9 +12,12 @@ use windows::Win32::{
 };
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MonitorConfig {
     kind: WallpaperKind,
     source: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    preview_source: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -46,6 +49,15 @@ impl Config {
             kind: monitor.kind,
             source: source.to_string(),
         })
+    }
+
+    pub fn preview_source_for_monitor(&self, index: usize) -> Option<&str> {
+        self.monitors
+            .get(index)?
+            .preview_source
+            .as_deref()
+            .map(str::trim)
+            .filter(|source| !source.is_empty())
     }
 
     pub fn load_from_file<P>(path: &P) -> anyhow::Result<Self>
@@ -99,10 +111,12 @@ mod tests {
                 MonitorConfig {
                     kind: WallpaperKind::Video,
                     source: "C:\\videos\\one.mp4".to_string(),
+                    preview_source: None,
                 },
                 MonitorConfig {
                     kind: WallpaperKind::Video,
                     source: "C:\\videos\\two.mp4".to_string(),
+                    preview_source: None,
                 },
             ],
         };
@@ -122,6 +136,7 @@ mod tests {
             monitors: vec![MonitorConfig {
                 kind: WallpaperKind::Video,
                 source: "   ".to_string(),
+                preview_source: None,
             }],
         };
 
@@ -134,6 +149,7 @@ mod tests {
             monitors: vec![MonitorConfig {
                 kind: WallpaperKind::Video,
                 source: "C:\\videos\\one.mp4".to_string(),
+                preview_source: None,
             }],
         };
 
@@ -173,6 +189,26 @@ source = "C:\\videos\\two.mp4"
                 source: "C:\\videos\\two.mp4".to_string(),
             })
         );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn load_from_file_reads_optional_preview_source() {
+        let path = temp_config_path();
+        fs::write(
+            &path,
+            r#"
+[[monitors]]
+kind = "webView"
+source = "<html></html>"
+previewSource = "C:\\videos\\one.mp4"
+"#,
+        )
+        .unwrap();
+
+        let config = Config::load_from_file(&path).unwrap();
+
+        assert_eq!(config.preview_source_for_monitor(0), Some("C:\\videos\\one.mp4"));
         let _ = fs::remove_file(path);
     }
 
