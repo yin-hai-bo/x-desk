@@ -104,19 +104,86 @@ impl Config {
         Ok(config)
     }
 
-    fn create_default_file(path: &Path, default_config: &Config) -> anyhow::Result<()> {
+    pub fn save_to_file<P>(&self, path: &P) -> anyhow::Result<()>
+    where
+        P: AsRef<Path>,
+    {
+        let path = path.as_ref();
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        let content = toml::to_string_pretty(default_config)?;
-        fs::write(path, content).context("Write configuration file failed")
+        fs::write(path, self.to_toml_string()).context("Write configuration file failed")
+    }
+
+    fn create_default_file(path: &Path, default_config: &Config) -> anyhow::Result<()> {
+        default_config.save_to_file(&path)
+    }
+
+    fn to_toml_string(&self) -> String {
+        let mut content = String::new();
+
+        for (index, monitor) in self.monitors.iter().enumerate() {
+            if index > 0 {
+                content.push('\n');
+            }
+
+            content.push_str("[[monitors]]\n");
+            content.push_str("kind = ");
+            content.push_str(toml_string(monitor.kind.as_config_value()).as_str());
+            content.push('\n');
+            content.push_str("source = ");
+            content.push_str(toml_source_string(&monitor.source).as_str());
+            content.push('\n');
+
+            if let Some(preview_source) = &monitor.preview_source {
+                content.push_str("previewSource = ");
+                content.push_str(toml_string(preview_source).as_str());
+                content.push('\n');
+            }
+        }
+
+        content
     }
 
     pub fn config_file_path(_app_name: &str) -> anyhow::Result<PathBuf> {
         let dir = appdata_dir()?.join("yinhaibo").join(_app_name);
         Ok(dir.join("config.toml"))
     }
+}
+
+impl WallpaperKind {
+    fn as_config_value(self) -> &'static str {
+        match self {
+            Self::Video => "video",
+            Self::WebView => "webView",
+        }
+    }
+}
+
+fn toml_source_string(value: &str) -> String {
+    if value.contains('\n') && !value.contains("'''") {
+        return format!("'''{}'''", value);
+    }
+
+    toml_string(value)
+}
+
+fn toml_string(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len() + 2);
+    escaped.push('"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => escaped.push_str("\\\\"),
+            '"' => escaped.push_str("\\\""),
+            '\n' => escaped.push_str("\\n"),
+            '\r' => escaped.push_str("\\r"),
+            '\t' => escaped.push_str("\\t"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped.push('"');
+    escaped
 }
 
 fn appdata_dir() -> anyhow::Result<PathBuf> {
@@ -318,6 +385,103 @@ previewSource = "C:\\videos\\one.mp4"
         );
         assert_eq!(config.preview_source_for_monitor(1), Some("C:\\pages\\two.html"));
         assert_eq!(config.monitors.len(), 2);
+    }
+
+    #[test]
+    fn save_to_file_writes_inline_html_source_as_readable_multiline_string() {
+        let path = temp_config_path();
+        let config = Config {
+            monitors: vec![MonitorConfig {
+                kind: WallpaperKind::WebView,
+                source: "<html>\n<body></body>\n</html>".to_string(),
+                preview_source: Some("C:\\videos\\one.mp4".to_string()),
+            }],
+        };
+
+        config.save_to_file(&path).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("source = '''<html>\n<body></body>\n</html>'''"));
+        assert!(content.contains("previewSource = \"C:\\\\videos\\\\one.mp4\""));
+        assert_eq!(
+            Config::load_from_file(&path).unwrap().content_for_monitor(0),
+            Some(WallpaperContentSpec {
+                kind: WallpaperKind::WebView,
+                source: "<html>\n<body></body>\n</html>".to_string(),
+            })
+        );
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn save_to_file_writes_path_source_as_regular_string() {
+        let path = temp_config_path();
+        let config = Config {
+            monitors: vec![MonitorConfig {
+                kind: WallpaperKind::WebView,
+                source: "C:\\pages\\index.html".to_string(),
+                preview_source: Some("C:\\pages\\index.html".to_string()),
+            }],
+        };
+
+        config.save_to_file(&path).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("source = \"C:\\\\pages\\\\index.html\""));
+        assert!(content.contains("previewSource = \"C:\\\\pages\\\\index.html\""));
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn save_to_file_writes_empty_source_as_regular_empty_string() {
+        let path = temp_config_path();
+        let config = Config {
+            monitors: vec![MonitorConfig {
+                kind: WallpaperKind::WebView,
+                source: String::new(),
+                preview_source: None,
+            }],
+        };
+
+        config.save_to_file(&path).unwrap();
+
+        let content = fs::read_to_string(&path).unwrap();
+        assert!(content.contains("source = \"\""));
+        assert!(!content.contains("previewSource"));
+        assert_eq!(Config::load_from_file(&path).unwrap().content_for_monitor(0), None);
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn save_to_file_preserves_extra_entries() {
+        let path = temp_config_path();
+        let config = Config {
+            monitors: vec![
+                MonitorConfig {
+                    kind: WallpaperKind::WebView,
+                    source: String::new(),
+                    preview_source: None,
+                },
+                MonitorConfig {
+                    kind: WallpaperKind::WebView,
+                    source: "C:\\pages\\two.html".to_string(),
+                    preview_source: Some("C:\\pages\\two.html".to_string()),
+                },
+            ],
+        };
+
+        config.save_to_file(&path).unwrap();
+
+        let loaded = Config::load_from_file(&path).unwrap();
+        assert_eq!(loaded.content_for_monitor(0), None);
+        assert_eq!(
+            loaded.content_for_monitor(1),
+            Some(WallpaperContentSpec {
+                kind: WallpaperKind::WebView,
+                source: "C:\\pages\\two.html".to_string(),
+            })
+        );
+        let _ = fs::remove_file(path);
     }
 
     fn temp_config_path() -> PathBuf {
