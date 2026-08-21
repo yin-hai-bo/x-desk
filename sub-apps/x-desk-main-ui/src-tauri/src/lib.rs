@@ -1,6 +1,7 @@
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-use std::path::PathBuf;
+use std::{path::PathBuf, thread};
 
+use single_instance::SingleInstanceMessage;
 use tauri::Manager;
 #[cfg(all(windows, not(debug_assertions)))]
 use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
@@ -8,6 +9,7 @@ use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
 use windows_core::Interface;
 
 const APP_NAME: &str = "x-desk";
+const MAIN_UI_INSTANCE_NAME: &str = "x-desk-main-ui";
 
 struct MainUiState {
     config_file_path: PathBuf,
@@ -72,6 +74,16 @@ fn disable_release_webview_features(app: &tauri::App) -> Result<(), Box<dyn std:
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let mut single_instanceinstance = match single_instance::SingleInstance::acquire(MAIN_UI_INSTANCE_NAME) {
+        Ok(Some(instance)) => instance,
+        Ok(None) => return,
+        Err(error) => {
+            eprintln!("Create single-instance guard failed: {error:#}");
+            return;
+        }
+    };
+    let receiver = single_instanceinstance.take_message_receiver();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -80,8 +92,25 @@ pub fn run() {
             config_file_path,
             has_wallpaper_config
         ])
-        .setup(|_app| {
+        .setup(move |_app| {
             _app.manage(load_main_ui_state()?);
+
+            if let Some(receiver) = receiver {
+                let app_handle = _app.handle().clone();
+                thread::spawn(move || {
+                    for message in receiver {
+                        match message {
+                            SingleInstanceMessage::SecondInstanceStarted => {
+                                if let Some(window) = app_handle.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.unminimize();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                    }
+                });
+            }
 
             #[cfg(all(windows, not(debug_assertions)))]
             disable_release_webview_features(_app)?;

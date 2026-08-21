@@ -3147,6 +3147,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3a219298ac11a56ea9a6d2120044824d6f01aeb034955e7af7bc16858527deea"
 
 [[package]]
+name = "single-instance"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
 name = "siphasher"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4986,6 +4994,7 @@ dependencies = [
  "embed-resource 2.5.2",
  "log",
  "regex",
+ "single-instance",
  "webview2-com 0.39.1",
  "windows 0.62.2",
  "windows-core 0.62.2",
@@ -5000,6 +5009,7 @@ dependencies = [
  "config",
  "serde",
  "serde_json",
+ "single-instance",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",

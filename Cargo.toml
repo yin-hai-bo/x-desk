@@ -41,6 +41,7 @@ anyhow = { workspace = true }
 config = { path = "crates/config" }
 log = "0.4.33"
 regex = "1.12.2"
+single-instance = { path = "crates/single-instance" }
 windows = { workspace = true }
 windows-core = "0.62.2"
 windows-implement = "0.60.2"

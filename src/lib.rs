@@ -4,6 +4,7 @@ mod win;
 use anyhow::Result;
 
 const APP_NAME: &str = "x-desk";
+const MAIN_APP_INSTANCE_NAME: &str = "x-desk-main-app";
 
 pub fn run_app() -> Result<()> {
     logger::init();
@@ -27,6 +28,13 @@ pub fn run_webview() -> Result<()> {
 fn do_run_app() -> Result<()> {
     use win::main_window::MainWindow;
     use windows::Win32::UI::HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext};
+
+    let Some(mut single_instanceinstance) = single_instance::SingleInstance::acquire(MAIN_APP_INSTANCE_NAME)? else {
+        log::info!("Another x-desk main app instance is already running");
+        return Ok(());
+    };
+    drop(single_instanceinstance.take_message_receiver());
+
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
