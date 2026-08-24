@@ -1,8 +1,110 @@
 <script setup lang="ts">
 import { invoke } from "@tauri-apps/api/core";
-import { onMounted, onUnmounted } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+
+type MonitorRect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+};
+
+type MonitorViewModel = {
+  index: number;
+  isPrimary: boolean;
+  rect: MonitorRect;
+};
+
+type MonitorLayoutViewModel = {
+  monitors: MonitorViewModel[];
+};
 
 const blockedShortcutKeys = new Set(["F5", "F11", "F12"]);
+const monitorLayout = ref<MonitorLayoutViewModel | null>(null);
+const monitorLayoutError = ref<string | null>(null);
+const isMonitorLayoutLoading = ref(false);
+const monitorMapElement = ref<HTMLElement | null>(null);
+const monitorMapSize = ref({ width: 0, height: 0 });
+let monitorMapResizeObserver: ResizeObserver | null = null;
+
+const virtualDesktopBounds = computed(() => {
+  const monitors = monitorLayout.value?.monitors ?? [];
+  if (monitors.length === 0) {
+    return null;
+  }
+
+  const left = Math.min(...monitors.map((monitor) => monitor.rect.left));
+  const top = Math.min(...monitors.map((monitor) => monitor.rect.top));
+  const right = Math.max(...monitors.map((monitor) => monitor.rect.right));
+  const bottom = Math.max(...monitors.map((monitor) => monitor.rect.bottom));
+
+  return {
+    left,
+    top,
+    width: Math.max(right - left, 1),
+    height: Math.max(bottom - top, 1),
+  };
+});
+
+const monitorStyle = (monitor: MonitorViewModel) => {
+  const bounds = virtualDesktopBounds.value;
+  if (!bounds) {
+    return {};
+  }
+
+  return {
+    left: `${((monitor.rect.left - bounds.left) / bounds.width) * 100}%`,
+    top: `${((monitor.rect.top - bounds.top) / bounds.height) * 100}%`,
+    width: `${(monitor.rect.width / bounds.width) * 100}%`,
+    height: `${(monitor.rect.height / bounds.height) * 100}%`,
+  };
+};
+
+const monitorCanvasStyle = computed(() => {
+  const bounds = virtualDesktopBounds.value;
+  const availableWidth = monitorMapSize.value.width;
+  const availableHeight = monitorMapSize.value.height;
+
+  if (!bounds || availableWidth === 0 || availableHeight === 0) {
+    return {};
+  }
+
+  const boundsRatio = bounds.width / bounds.height;
+  const availableRatio = availableWidth / availableHeight;
+  const width = availableRatio > boundsRatio ? availableHeight * boundsRatio : availableWidth;
+  const height = availableRatio > boundsRatio ? availableHeight : availableWidth / boundsRatio;
+
+  return {
+    width: `${width}px`,
+    height: `${height}px`,
+  };
+});
+
+const loadMonitorLayout = async () => {
+  isMonitorLayoutLoading.value = true;
+  monitorLayoutError.value = null;
+
+  try {
+    monitorLayout.value = await invoke<MonitorLayoutViewModel>("monitor_layout_view_model");
+  } catch (error) {
+    monitorLayoutError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    isMonitorLayoutLoading.value = false;
+  }
+};
+
+const updateMonitorMapSize = () => {
+  if (!monitorMapElement.value) {
+    return;
+  }
+
+  monitorMapSize.value = {
+    width: monitorMapElement.value.clientWidth,
+    height: monitorMapElement.value.clientHeight,
+  };
+};
 
 const blockContextMenu = (event: MouseEvent) => {
   event.preventDefault();
@@ -25,6 +127,19 @@ const exitMainUi = async () => {
 };
 
 onMounted(() => {
+  void loadMonitorLayout();
+
+  if (monitorMapElement.value) {
+    monitorMapResizeObserver = new ResizeObserver(([entry]) => {
+      monitorMapSize.value = {
+        width: entry.contentRect.width,
+        height: entry.contentRect.height,
+      };
+    });
+    monitorMapResizeObserver.observe(monitorMapElement.value);
+    updateMonitorMapSize();
+  }
+
   if (import.meta.env.PROD) {
     window.addEventListener("contextmenu", blockContextMenu, { capture: true });
     window.addEventListener("keydown", blockWebShortcuts, { capture: true });
@@ -32,6 +147,9 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
+  monitorMapResizeObserver?.disconnect();
+  monitorMapResizeObserver = null;
+
   if (import.meta.env.PROD) {
     window.removeEventListener("contextmenu", blockContextMenu, { capture: true });
     window.removeEventListener("keydown", blockWebShortcuts, { capture: true });
@@ -59,7 +177,39 @@ onUnmounted(() => {
       </div>
     </header>
 
-    <section class="content-area" aria-label="Main content area" />
+    <section class="content-area" aria-label="Main content area">
+      <div class="monitor-panel">
+        <div class="monitor-panel-header">
+          <div>
+            <h1 class="monitor-panel-title">Monitor Layout</h1>
+          </div>
+          <button class="refresh-button" type="button" :disabled="isMonitorLayoutLoading" @click="loadMonitorLayout">
+            {{ isMonitorLayoutLoading ? "Scanning" : "Refresh" }}
+          </button>
+        </div>
+
+        <p v-if="monitorLayoutError" class="monitor-error" role="alert">{{ monitorLayoutError }}</p>
+
+        <div ref="monitorMapElement" class="monitor-map" aria-label="Detected monitors">
+          <div v-if="monitorLayout?.monitors.length" class="monitor-canvas" :style="monitorCanvasStyle">
+            <article
+              v-for="monitor in monitorLayout.monitors"
+              :key="monitor.index"
+              class="monitor-card"
+              :class="{ 'monitor-card-primary': monitor.isPrimary }"
+              :style="monitorStyle(monitor)"
+            >
+              <span class="monitor-index">{{ monitor.index + 1 }}</span>
+              <span class="monitor-primary" v-if="monitor.isPrimary">Primary</span>
+              <span class="monitor-resolution">{{ monitor.rect.width }} x {{ monitor.rect.height }}</span>
+            </article>
+          </div>
+
+          <div v-else-if="!isMonitorLayoutLoading" class="monitor-empty">No monitors returned by the backend.</div>
+          <div v-else class="monitor-empty">Scanning monitors...</div>
+        </div>
+      </div>
+    </section>
   </main>
 </template>
 
@@ -107,10 +257,14 @@ body {
   display: flex;
   flex-direction: column;
   background:
+    linear-gradient(180deg, rgba(0, 230, 246, 0.04), transparent 24%),
+    radial-gradient(ellipse at center, rgba(0, 230, 246, 0.035), transparent 58%),
     radial-gradient(circle at 18% 14%, rgba(0, 230, 246, 0.13), transparent 29%),
     radial-gradient(circle at 86% 78%, rgba(0, 230, 246, 0.08), transparent 34%),
     linear-gradient(145deg, #000000 0%, #020b0d 46%, #000000 100%);
   color: var(--text-color);
+  -webkit-app-region: drag;
+  user-select: none;
 }
 
 .titlebar {
@@ -119,11 +273,9 @@ body {
   align-items: center;
   justify-content: space-between;
   padding: 0 16px 0 18px;
-  background: var(--titlebar-bg);
-  border-bottom: 1px solid var(--titlebar-border);
-  box-shadow: 0 0 22px rgba(0, 230, 246, 0.08);
-  -webkit-app-region: drag;
-  user-select: none;
+  background: transparent;
+  border-bottom: 0;
+  box-shadow: none;
 }
 
 .brand {
@@ -217,8 +369,155 @@ body {
 
 .content-area {
   flex: 1;
+  min-height: 0;
+  padding: 22px 28px 28px;
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.monitor-panel {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border: 1px solid rgba(0, 230, 246, 0.26);
+  border-radius: 18px;
+  padding: 22px;
+  box-sizing: border-box;
+  background: rgba(0, 10, 12, 0.58);
+  box-shadow: inset 0 0 24px rgba(0, 230, 246, 0.06), 0 0 34px rgba(0, 230, 246, 0.08);
+  -webkit-app-region: no-drag;
+}
+
+.monitor-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.monitor-panel-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.refresh-button {
+  min-width: 92px;
+  border: 1px solid rgba(0, 230, 246, 0.38);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: rgba(0, 230, 246, 0.08);
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.refresh-button:hover:not(:disabled) {
+  background: rgba(0, 230, 246, 0.16);
+}
+
+.refresh-button:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.monitor-error {
+  margin: 0;
+  border: 1px solid rgba(255, 105, 105, 0.42);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #ff9a9a;
+  background: rgba(90, 0, 0, 0.24);
+}
+
+.monitor-map {
+  position: relative;
+  flex: 1;
+  min-height: 260px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border: 1px solid rgba(0, 230, 246, 0.18);
+  border-radius: 14px;
+  overflow: hidden;
   background:
-    linear-gradient(180deg, rgba(0, 230, 246, 0.045), transparent 24%),
-    radial-gradient(ellipse at center, rgba(0, 230, 246, 0.035), transparent 58%);
+    linear-gradient(rgba(0, 230, 246, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0, 230, 246, 0.08) 1px, transparent 1px),
+    rgba(0, 0, 0, 0.22);
+  background-size: 32px 32px;
+}
+
+.monitor-canvas {
+  position: relative;
+  border: 1px solid rgba(0, 230, 246, 0.12);
+  box-sizing: border-box;
+}
+
+.monitor-card {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 72px;
+  min-height: 52px;
+  border: 2px solid rgba(0, 230, 246, 0.72);
+  border-radius: 12px;
+  box-sizing: border-box;
+  background: linear-gradient(145deg, rgba(0, 230, 246, 0.13), rgba(0, 40, 45, 0.62));
+  color: var(--text-color);
+  box-shadow: inset 0 0 28px rgba(0, 230, 246, 0.08), 0 0 24px rgba(0, 230, 246, 0.16);
+}
+
+.monitor-card-primary {
+  border-color: rgba(116, 255, 225, 0.9);
+  box-shadow: inset 0 0 30px rgba(116, 255, 225, 0.12), 0 0 28px rgba(116, 255, 225, 0.18);
+}
+
+.monitor-index {
+  font-size: 28px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.monitor-primary {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: rgba(116, 255, 225, 0.9);
+}
+
+.monitor-resolution {
+  font-size: 12px;
+  color: rgba(0, 230, 246, 0.72);
+}
+
+.monitor-empty {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: rgba(0, 230, 246, 0.66);
+}
+
+@media (max-width: 720px) {
+  .content-area {
+    padding: 16px;
+  }
+
+  .monitor-panel {
+    padding: 16px;
+  }
+
+  .monitor-panel-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
 }
 </style>

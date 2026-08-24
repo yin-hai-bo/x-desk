@@ -5014,6 +5014,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "webview2-com 0.38.2",
+ "windows 0.62.2",
  "windows-core 0.61.2",
 ]
 

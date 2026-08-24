@@ -27,7 +27,7 @@ This document is temporary. Delete it after the full Main UI monitor configurati
    - Validate supported extensions: `.html`, `.htm`, `.mp4`, `.webm`, `.mov`, `.m4v`.
    - Keep HTML files as direct WebView file sources.
 
-5. [ ] Add monitor layout ViewModel commands in the Main UI backend.
+5. [x] Add monitor layout ViewModel commands in the Main UI backend.
    - Enumerate Win32 monitors and return real virtual desktop rectangles.
    - Merge monitor entries with config by index.
    - Return preview kind and backend-generated preview URL when possible.
