@@ -19,8 +19,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 anyhow = { workspace = true }
-config = { path = "../../../crates/config" }
-single-instance = { path = "../../../crates/single-instance" }
+common = { workspace = true }
+config = { workspace = true }
+single-instance = { workspace = true }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }

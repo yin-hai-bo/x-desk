@@ -24,8 +24,6 @@ use windows::{
 #[cfg(all(windows, not(debug_assertions)))]
 use windows_core::Interface;
 
-const APP_NAME: &str = "x-desk";
-const MAIN_UI_INSTANCE_NAME: &str = "x-desk-main-ui";
 #[allow(dead_code)]
 const VIDEO_SOURCE_TEMPLATE: &str = r#"<html>
 <head>
@@ -342,7 +340,7 @@ fn refresh_monitor_layout_view_model(state: tauri::State<MainUiState>) -> Result
 }
 
 fn load_main_ui_state() -> anyhow::Result<MainUiState> {
-    let config_file_path = config::Config::config_file_path(APP_NAME)?;
+    let config_file_path = config::Config::config_file_path(common::APP_NAME)?;
     let config = config::Config::load_from_file(&config_file_path)?;
 
     Ok(MainUiState {
@@ -379,7 +377,7 @@ fn disable_release_webview_features(app: &tauri::App) -> Result<(), Box<dyn std:
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let mut single_instanceinstance = match single_instance::SingleInstance::acquire(MAIN_UI_INSTANCE_NAME) {
+    let mut single_instanceinstance = match single_instance::SingleInstance::acquire(common::MAIN_UI_INSTANCE_NAME) {
         Ok(Some(instance)) => instance,
         Ok(None) => return,
         Err(error) => {

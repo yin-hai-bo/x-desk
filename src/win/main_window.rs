@@ -155,6 +155,10 @@ impl MainWindow {
                     log::error!("Launch main UI process failed: {:#}", e);
                 }
             }
+            TrayCommand::Exit => {
+                let _ = main_ui_process::request_main_ui_exit();
+                unsafe { PostQuitMessage(0) };
+            }
         }
     }
 

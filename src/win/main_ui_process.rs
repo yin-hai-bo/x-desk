@@ -39,6 +39,10 @@ pub(super) fn launch_main_ui_process(config_path: &Path) -> Result<()> {
     Ok(())
 }
 
+pub(super) fn request_main_ui_exit() -> bool {
+    single_instance::SingleInstance::request_exit(common::MAIN_UI_INSTANCE_NAME)
+}
+
 fn main_ui_exe_path() -> Result<std::path::PathBuf> {
     Ok(std::env::current_exe()?.with_file_name("x-desk-main-ui.exe"))
 }

@@ -8,7 +8,10 @@ members = ["crates/*", "sub-apps/x-desk-main-ui/src-tauri"]
 
 [workspace.dependencies]
 anyhow = "1.0.104"
+common = { path = "crates/common" }
+config = { path = "crates/config" }
 serde = { version = "1.0.229", features = ["derive"] }
+single-instance = { path = "crates/single-instance" }
 toml = "0.8.23"
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
@@ -39,10 +42,11 @@ path = "src/processes/x-desk-webview.rs"
 
 [dependencies]
 anyhow = { workspace = true }
-config = { path = "crates/config" }
+common = { workspace = true }
+config = { workspace = true }
 log = "0.4.33"
 regex = "1.12.2"
-single-instance = { path = "crates/single-instance" }
+single-instance = { workspace = true }
 windows = { workspace = true }
 windows-core = "0.62.2"
 windows-implement = "0.60.2"

@@ -476,6 +476,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "common"
+version = "0.1.0"
+
+[[package]]
 name = "concurrent-queue"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4990,6 +4994,7 @@ name = "x-desk"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "common",
  "config",
  "embed-resource 2.5.2",
  "log",
@@ -5006,6 +5011,7 @@ name = "x-desk-main-ui"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "common",
  "config",
  "serde",
  "serde_json",

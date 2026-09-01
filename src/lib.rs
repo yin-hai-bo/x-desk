@@ -3,7 +3,6 @@ mod win;
 
 use anyhow::Result;
 
-const APP_NAME: &str = "x-desk";
 const MAIN_APP_INSTANCE_NAME: &str = "x-desk-main-app";
 
 pub fn run_app() -> Result<()> {
@@ -38,8 +37,8 @@ fn do_run_app() -> Result<()> {
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }
-    let config_file_path = config::Config::config_file_path(APP_NAME)?;
+    let config_file_path = config::Config::config_file_path(common::APP_NAME)?;
     let config = config::Config::load_from_file(&config_file_path)?;
-    let mut main_window = MainWindow::create(APP_NAME, config, config_file_path)?;
+    let mut main_window = MainWindow::create(common::APP_NAME, config, config_file_path)?;
     main_window.run()
 }

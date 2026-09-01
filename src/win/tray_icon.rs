@@ -10,8 +10,8 @@ use windows::{
                 NOTIFYICONDATAW, Shell_NotifyIconW,
             },
             WindowsAndMessaging::{
-                GetCursorPos, IDI_APPLICATION, LoadIconW, MB_ICONINFORMATION, MB_OK, MessageBoxW, PostQuitMessage,
-                SetForegroundWindow, WM_CONTEXTMENU, WM_LBUTTONDBLCLK, WM_RBUTTONUP,
+                GetCursorPos, IDI_APPLICATION, LoadIconW, MB_ICONINFORMATION, MB_OK, MessageBoxW, SetForegroundWindow,
+                WM_CONTEXTMENU, WM_LBUTTONDBLCLK, WM_RBUTTONUP,
             },
         },
     },
@@ -34,6 +34,7 @@ pub(super) struct TrayIcon {
 
 pub(super) enum TrayCommand {
     ShowMainUi,
+    Exit,
 }
 
 impl TrayIcon {
@@ -104,10 +105,7 @@ impl TrayIcon {
                 self.show_about(window);
                 None
             }
-            MENU_EXIT => {
-                unsafe { PostQuitMessage(0) };
-                None
-            }
+            MENU_EXIT => Some(TrayCommand::Exit),
             _ => None,
         })
     }
