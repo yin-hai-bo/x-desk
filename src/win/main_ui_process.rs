@@ -1,12 +1,41 @@
-use std::{path::Path, process::Command};
+use std::path::Path;
 
 use anyhow::{Context, Result};
+use windows::Win32::{
+    Foundation::CloseHandle,
+    System::Threading::{CreateProcessW, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STARTUPINFOW},
+};
+
+use crate::win::wide_string::WideString;
 
 pub(super) fn launch_main_ui_process(config_path: &Path) -> Result<()> {
     let _ = config_path;
-    Command::new(main_ui_exe_path()?)
-        .spawn()
-        .context("Start main UI process failed")?;
+    let exe_path = main_ui_exe_path()?;
+    let exe_path = WideString::from_os_string(exe_path.as_os_str());
+    let startup_info = STARTUPINFOW::default();
+    let mut process_info = PROCESS_INFORMATION::default();
+
+    unsafe {
+        CreateProcessW(
+            exe_path.as_pcwstr(),
+            None,
+            None,
+            None,
+            false,
+            PROCESS_CREATION_FLAGS(0),
+            None,
+            None,
+            &startup_info,
+            &mut process_info,
+        )
+    }
+    .context("Start main UI process failed")?;
+
+    unsafe {
+        let _ = CloseHandle(process_info.hThread);
+        let _ = CloseHandle(process_info.hProcess);
+    }
+
     Ok(())
 }
 
