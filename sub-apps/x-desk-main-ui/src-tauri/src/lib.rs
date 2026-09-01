@@ -414,6 +414,9 @@ pub fn run() {
                                     let _ = window.set_focus();
                                 }
                             }
+                            SingleInstanceMessage::ExitRequested => {
+                                app_handle.exit(0);
+                            }
                         }
                     }
                 });

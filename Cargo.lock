@@ -3151,7 +3151,7 @@ name = "single-instance"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "windows-sys 0.61.2",
+ "windows 0.62.2",
 ]
 
 [[package]]
