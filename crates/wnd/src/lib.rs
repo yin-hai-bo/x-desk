@@ -15,6 +15,7 @@ use windows::{
     core::PCWSTR,
 };
 
+pub mod wide_string;
 pub mod win_utils;
 
 pub struct Window<T> {

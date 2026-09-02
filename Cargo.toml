@@ -10,6 +10,7 @@ members = ["crates/*", "sub-apps/x-desk-main-ui/src-tauri"]
 anyhow = "1.0.104"
 common = { path = "crates/common" }
 config = { path = "crates/config" }
+log = "0.4.33"
 serde = { version = "1.0.229", features = ["derive"] }
 single-instance = { path = "crates/single-instance" }
 toml = "0.8.23"
@@ -45,7 +46,7 @@ path = "src/processes/x-desk-webview.rs"
 anyhow = { workspace = true }
 common = { workspace = true }
 config = { workspace = true }
-log = "0.4.33"
+log = { workspace = true }
 regex = "1.12.2"
 single-instance = { workspace = true }
 wnd = { workspace = true }

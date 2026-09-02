@@ -15,4 +15,3 @@ mod video_host;
 pub mod wallpaper_manager;
 mod watcher;
 pub(crate) mod webview;
-mod wide_string;

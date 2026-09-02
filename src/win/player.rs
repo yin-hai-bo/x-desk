@@ -12,12 +12,12 @@ use windows::Win32::{
     UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, MSG, PostMessageW, TranslateMessage},
 };
 
-use crate::{logger, win::wide_string::WideString};
+use wnd::wide_string::WideString;
 
 use super::video_host::{PLAYER_PAUSE_MESSAGE, PLAYER_RESUME_MESSAGE, PLAYER_STOP_MESSAGE, VideoHost};
 
 pub(crate) fn run_player() -> Result<()> {
-    logger::init();
+    common::logger::init();
     let args = PlayerArgs::parse()?;
     let mut pipe = open_pipe(&args.pipe_name)?;
     let window = VideoHost::create_player_window(&args.source)?;

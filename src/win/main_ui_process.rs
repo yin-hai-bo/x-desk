@@ -6,7 +6,7 @@ use windows::Win32::{
     System::Threading::{CreateProcessW, PROCESS_CREATION_FLAGS, PROCESS_INFORMATION, STARTUPINFOW},
 };
 
-use crate::win::wide_string::WideString;
+use wnd::wide_string::WideString;
 
 pub(super) fn launch_main_ui_process(config_path: &Path) -> Result<()> {
     let _ = config_path;

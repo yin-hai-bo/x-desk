@@ -14,8 +14,8 @@ use windows::Win32::{
     UI::WindowsAndMessaging::GetWindowThreadProcessId,
 };
 
-use crate::win::wide_string::WideString;
 use config::{WallpaperContentSpec, WallpaperKind};
+use wnd::wide_string::WideString;
 
 const PIPE_BUFFER_SIZE: u32 = 4096;
 static NEXT_PIPE_ID: AtomicU64 = AtomicU64::new(1);

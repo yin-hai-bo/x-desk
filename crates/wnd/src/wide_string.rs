@@ -82,23 +82,6 @@ impl WideString {
         self.inner.clone()
     }
 
-    // pub fn wstr_copy(src: PCWSTR, dst: PWSTR, max_chars: usize) -> Result<usize, String> {
-    //     if src.is_null() {
-    //         return Err("Null source pointer".to_string());
-    //     }
-    //     if dst.is_null() {
-    //         return Err("Null destination pointer".to_string());
-    //     }
-    //     let p_dst = dst.as_ptr();
-    //     let count = WideStringIterator::new(src)
-    //         .take(max_chars)
-    //         .enumerate()
-    //         .inspect(|(i, c)| unsafe { *p_dst.add(*i) = *c; })
-    //     .count();
-    //     dst
-    //     Ok(count)
-    // }
-
     pub fn copy_to(&self, dst: &mut [u16]) -> usize {
         let count = self
             .inner
@@ -134,7 +117,7 @@ impl Iterator for WideStringIterator {
                 return None;
             }
             self.ptr = self.ptr.add(1);
-            return Some(ch);
+            Some(ch)
         }
     }
 }

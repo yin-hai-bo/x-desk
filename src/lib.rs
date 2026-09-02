@@ -1,4 +1,3 @@
-mod logger;
 mod win;
 
 use anyhow::Result;
@@ -6,7 +5,7 @@ use anyhow::Result;
 const MAIN_APP_INSTANCE_NAME: &str = "x-desk-main-app";
 
 pub fn run_app() -> Result<()> {
-    logger::init();
+    common::logger::init();
     match do_run_app() {
         Ok(_) => Ok(()),
         Err(e) => {

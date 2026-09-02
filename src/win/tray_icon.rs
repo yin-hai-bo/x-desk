@@ -18,7 +18,7 @@ use windows::{
     core::{PCWSTR, Result},
 };
 
-use crate::win::wide_string::WideString;
+use wnd::wide_string::WideString;
 
 use super::{
     menu::Menu,

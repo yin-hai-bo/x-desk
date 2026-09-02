@@ -36,7 +36,7 @@ use windows::{
 use windows_core::Interface;
 use wnd::Window;
 
-use crate::{logger, win::wide_string::WideString};
+use wnd::wide_string::WideString;
 
 const WEBVIEW_WINDOW_CLASS_NAME: PCWSTR = w!("X-Desk-WebView-Class");
 const WEBVIEW_STOP_MESSAGE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 1;
@@ -143,7 +143,7 @@ const RESUME_VIDEOS_SCRIPT: &str = r#"
 "#;
 
 pub(crate) fn run_webview() -> Result<()> {
-    logger::init();
+    common::logger::init();
     unsafe {
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     }

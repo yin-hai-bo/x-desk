@@ -13,14 +13,11 @@ use windows::{
     },
     core::{PCWSTR, w},
 };
-use wnd::{Window, win_utils};
+use wnd::{Window, wide_string::WideString, win_utils};
 
 use config::WallpaperContentSpec;
 
-use crate::win::{
-    content_process::{self, ContentCommand, ContentProcessHandle},
-    wide_string::WideString,
-};
+use crate::win::content_process::{self, ContentCommand, ContentProcessHandle};
 
 const DOCK_CLASS_NAME: PCWSTR = w!("X-Desk-Dock-Class");
 static DOCK_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
