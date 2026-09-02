@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = ["crates/*", "sub-apps/x-desk-main-ui/src-tauri", "sub-apps/x-desk-player"]
+members = [
+    "crates/*",
+    "sub-apps/x-desk-main-ui/src-tauri",
+    "sub-apps/x-desk-player",
+    "sub-apps/x-desk-webview",
+]
 
 [workspace.dependencies]
 anyhow = "1.0.104"
@@ -34,21 +39,14 @@ windows = { version = "0.62.2", features = [
     "Win32_UI_WindowsAndMessaging",
 ] }
 
-[[bin]]
-name = "x-desk-webview"
-path = "src/processes/x-desk-webview.rs"
-
 [dependencies]
 anyhow = { workspace = true }
 common = { workspace = true }
 config = { workspace = true }
 log = { workspace = true }
-regex = "1.12.2"
 single-instance = { workspace = true }
 wnd = { workspace = true }
 windows = { workspace = true }
-windows-core = "0.62.2"
-webview2-com = "0.39.1"
 
 
 [build-dependencies]

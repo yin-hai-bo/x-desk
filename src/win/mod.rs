@@ -12,4 +12,3 @@ mod resource_ids;
 mod tray_icon;
 pub mod wallpaper_manager;
 mod watcher;
-pub(crate) mod webview;

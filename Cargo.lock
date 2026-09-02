@@ -5009,11 +5009,8 @@ dependencies = [
  "config",
  "embed-resource 2.5.2",
  "log",
- "regex",
  "single-instance",
- "webview2-com 0.39.1",
  "windows 0.62.2",
- "windows-core 0.62.2",
  "wnd",
 ]
 
@@ -5045,6 +5042,20 @@ dependencies = [
  "windows 0.62.2",
  "windows-core 0.62.2",
  "windows-implement",
+ "wnd",
+]
+
+[[package]]
+name = "x-desk-webview"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "common",
+ "log",
+ "regex",
+ "webview2-com 0.39.1",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
  "wnd",
 ]
 
