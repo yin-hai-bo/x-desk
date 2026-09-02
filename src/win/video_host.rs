@@ -1,5 +1,4 @@
 use std::{
-    ops::{Deref, DerefMut},
     path::Path,
     sync::{Mutex, OnceLock},
 };
@@ -27,8 +26,9 @@ use windows::{
     core::{BSTR, PCWSTR, w},
 };
 use windows_implement::implement;
+use wnd::Window;
 
-use crate::win::{wide_string::WideString, window::Window};
+use crate::win::wide_string::WideString;
 
 const VIDEO_HOST_CLASS_NAME: PCWSTR = w!("X-Desk-VideoHost-Class");
 static VIDEO_HOST_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
@@ -150,20 +150,6 @@ impl VideoHost {
             _ => {}
         }
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
-    }
-}
-
-impl Deref for Window<VideoHost> {
-    type Target = VideoHost;
-
-    fn deref(&self) -> &Self::Target {
-        self.component()
-    }
-}
-
-impl DerefMut for Window<VideoHost> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.component_mut()
     }
 }
 

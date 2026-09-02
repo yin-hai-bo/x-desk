@@ -1,7 +1,4 @@
-use std::{
-    ops::{Deref, DerefMut},
-    sync::Mutex,
-};
+use std::sync::Mutex;
 
 use anyhow::Result;
 use windows::{
@@ -16,14 +13,13 @@ use windows::{
     },
     core::{PCWSTR, w},
 };
+use wnd::{Window, win_utils};
 
 use config::WallpaperContentSpec;
 
 use crate::win::{
     content_process::{self, ContentCommand, ContentProcessHandle},
     wide_string::WideString,
-    win_utils,
-    window::Window,
 };
 
 const DOCK_CLASS_NAME: PCWSTR = w!("X-Desk-Dock-Class");
@@ -164,19 +160,5 @@ impl Dock {
             _ => {}
         }
         unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) }
-    }
-}
-
-impl Deref for Window<Dock> {
-    type Target = Dock;
-
-    fn deref(&self) -> &Self::Target {
-        self.component()
-    }
-}
-
-impl DerefMut for Window<Dock> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.component_mut()
     }
 }

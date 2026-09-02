@@ -1,8 +1,9 @@
 use super::{desktop::Desktop, desktop_attachment, monitor::MonitorManager};
-use crate::win::{dock::Dock, occlusion::DockRegion, window::Window};
+use crate::win::{dock::Dock, occlusion::DockRegion};
 use anyhow::{Context, Result, anyhow, bail};
 use config::{Config, WallpaperContentSpec, WallpaperKind};
 use windows::Win32::Foundation::{HWND, RECT};
+use wnd::Window;
 
 pub struct WallpaperManager {
     desktop: Option<Desktop>,

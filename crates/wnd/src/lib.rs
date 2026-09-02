@@ -1,15 +1,21 @@
-use std::{ffi::c_void, ptr::NonNull};
+use std::{
+    ffi::c_void,
+    ops::{Deref, DerefMut},
+    ptr::NonNull,
+};
 
 use windows::{
     Win32::{
-        Foundation::{FALSE, HWND, LPARAM},
+        Foundation::{FALSE, HINSTANCE, HWND, LPARAM},
         UI::WindowsAndMessaging::{
-            CREATESTRUCTW, CreateWindowExW, DestroyWindow, GWLP_USERDATA, GetWindowLongPtrW, IsWindow,
-            SetWindowLongPtrW,
+            CREATESTRUCTW, CreateWindowExW, DestroyWindow, GWLP_USERDATA, GetWindowLongPtrW, HMENU, IsWindow,
+            SetWindowLongPtrW, WINDOW_EX_STYLE, WINDOW_STYLE,
         },
     },
     core::PCWSTR,
 };
+
+pub mod win_utils;
 
 pub struct Window<T> {
     hwnd: HWND,
@@ -30,19 +36,19 @@ impl<T> Window<T> {
         &mut self.component
     }
 
-    /// 调用 Win32 API 来创建在堆上的 Window<T> 对象
+    /// 调用 Win32 API 来创建在堆上的 Window<T> 对象。
     pub fn create(
-        exstyle: windows::Win32::UI::WindowsAndMessaging::WINDOW_EX_STYLE,
+        exstyle: WINDOW_EX_STYLE,
         class_name: PCWSTR,
         window_name: PCWSTR,
-        style: windows::Win32::UI::WindowsAndMessaging::WINDOW_STYLE,
+        style: WINDOW_STYLE,
         x: i32,
         y: i32,
         width: i32,
         height: i32,
         parent: Option<HWND>,
-        menu: Option<windows::Win32::UI::WindowsAndMessaging::HMENU>,
-        instance: Option<windows::Win32::Foundation::HINSTANCE>,
+        menu: Option<HMENU>,
+        instance: Option<HINSTANCE>,
         component: T,
     ) -> anyhow::Result<Box<Self>> {
         let window = Box::new(Self {
@@ -68,7 +74,7 @@ impl<T> Window<T> {
         Ok(window)
     }
 
-    /// WndProc 处理 WM_NCCREATE 消息时调用本函数，将 Window 对象的指针与 HWND 关联起来
+    /// WndProc 处理 WM_NCCREATE 消息时调用本函数，将 Window 对象的指针与 HWND 关联起来。
     pub fn on_wm_nccreate(hwnd: HWND, lparam: LPARAM) {
         unsafe {
             let cs = &*(lparam.0 as *const CREATESTRUCTW);
@@ -78,7 +84,7 @@ impl<T> Window<T> {
         }
     }
 
-    /// WndProc 处理 WM_NCDESTROY 消息时调用本函数，将 Window 对象与 HWND 分离
+    /// WndProc 处理 WM_NCDESTROY 消息时调用本函数，将 Window 对象与 HWND 分离。
     pub fn on_wm_ncdestroy(hwnd: HWND) {
         unsafe {
             let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA) as *mut c_void;
@@ -132,12 +138,25 @@ impl<T> Window<T> {
     }
 }
 
+impl<T> Deref for Window<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.component()
+    }
+}
+
+impl<T> DerefMut for Window<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.component_mut()
+    }
+}
+
 impl<T> Drop for Window<T> {
     fn drop(&mut self) {
         let _ = self.destroy_window();
         if !self.hwnd.is_invalid() {
-            // 防止 Destroy Window 失败而没有处理 WM_NCDESTROY 消息
-            // 所以这里手动将 HWND 中的关联裸指针清空
+            // 防止 Destroy Window 失败而没有处理 WM_NCDESTROY 消息，手动将 HWND 中的关联裸指针清空。
             unsafe {
                 let _ = SetWindowLongPtrW(self.hwnd, GWLP_USERDATA, 0);
             }

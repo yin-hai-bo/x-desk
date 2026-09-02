@@ -1,4 +1,4 @@
-use crate::win::{desktop::Desktop, win_utils};
+use crate::win::desktop::Desktop;
 use anyhow::Result;
 use windows::Win32::{
     Foundation::{HWND, POINT, RECT},
@@ -9,6 +9,7 @@ use windows::Win32::{
         WS_SYSMENU, WS_THICKFRAME,
     },
 };
+use wnd::win_utils;
 
 pub(super) struct AttachedContentWindow {
     pub(super) x: i32,

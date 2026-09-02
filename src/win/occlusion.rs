@@ -22,7 +22,7 @@ use windows::{
     core::BOOL,
 };
 
-use crate::win::win_utils;
+use wnd::win_utils;
 
 const VISIBLE_AREA_PERCENT_THRESHOLD: i64 = 5;
 const CLASS_PROGMAN: &str = "Progman";

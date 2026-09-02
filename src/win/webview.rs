@@ -34,11 +34,9 @@ use windows::{
     core::{PCWSTR, w},
 };
 use windows_core::Interface;
+use wnd::Window;
 
-use crate::{
-    logger,
-    win::{wide_string::WideString, window::Window},
-};
+use crate::{logger, win::wide_string::WideString};
 
 const WEBVIEW_WINDOW_CLASS_NAME: PCWSTR = w!("X-Desk-WebView-Class");
 const WEBVIEW_STOP_MESSAGE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 1;

@@ -13,6 +13,7 @@ config = { path = "crates/config" }
 serde = { version = "1.0.229", features = ["derive"] }
 single-instance = { path = "crates/single-instance" }
 toml = "0.8.23"
+wnd = { path = "crates/wnd" }
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
@@ -47,6 +48,7 @@ config = { workspace = true }
 log = "0.4.33"
 regex = "1.12.2"
 single-instance = { workspace = true }
+wnd = { workspace = true }
 windows = { workspace = true }
 windows-core = "0.62.2"
 windows-implement = "0.60.2"

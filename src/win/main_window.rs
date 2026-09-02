@@ -13,6 +13,7 @@ use windows::{
     },
     core::{PCWSTR, w},
 };
+use wnd::Window;
 
 use config::Config;
 
@@ -22,7 +23,6 @@ use crate::win::{
     tray_icon::{TrayCommand, TrayIcon},
     wallpaper_manager::WallpaperManager,
     watcher::{WatchEvent, Watcher},
-    window::Window,
 };
 
 const CLASS_NAME: PCWSTR = w!("YHB-XDeskMainWindow");
@@ -323,13 +323,6 @@ impl MainWindow {
             _ => {}
         }
         unsafe { DefWindowProcW(hwnd, message, wparam, lparam) }
-    }
-}
-
-impl Window<MainWindow> {
-    pub fn run(&mut self) -> anyhow::Result<()> {
-        let hwnd = self.hwnd();
-        self.component_mut().run(hwnd)
     }
 }
 

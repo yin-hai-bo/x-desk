@@ -1,4 +1,3 @@
-use crate::win::win_utils;
 use anyhow::{Context, Result};
 use windows::{
     Win32::{
@@ -10,6 +9,7 @@ use windows::{
     },
     core::{BOOL, PCWSTR, w},
 };
+use wnd::win_utils;
 
 const PROGMAN_NAME: PCWSTR = w!("Progman");
 const WORKER_W_NAME: PCWSTR = w!("WorkerW");

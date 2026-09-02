@@ -40,5 +40,6 @@ fn do_run_app() -> Result<()> {
     let config_file_path = config::Config::config_file_path(common::APP_NAME)?;
     let config = config::Config::load_from_file(&config_file_path)?;
     let mut main_window = MainWindow::create(common::APP_NAME, config, config_file_path)?;
-    main_window.run()
+    let hwnd = main_window.hwnd();
+    main_window.component_mut().run(hwnd)
 }
