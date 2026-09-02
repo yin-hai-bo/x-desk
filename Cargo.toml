@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = ["crates/*", "sub-apps/x-desk-main-ui/src-tauri"]
+members = ["crates/*", "sub-apps/x-desk-main-ui/src-tauri", "sub-apps/x-desk-player"]
 
 [workspace.dependencies]
 anyhow = "1.0.104"
@@ -35,10 +35,6 @@ windows = { version = "0.62.2", features = [
 ] }
 
 [[bin]]
-name = "x-desk-player"
-path = "src/processes/x-desk-player.rs"
-
-[[bin]]
 name = "x-desk-webview"
 path = "src/processes/x-desk-webview.rs"
 
@@ -52,7 +48,6 @@ single-instance = { workspace = true }
 wnd = { workspace = true }
 windows = { workspace = true }
 windows-core = "0.62.2"
-windows-implement = "0.60.2"
 webview2-com = "0.39.1"
 
 

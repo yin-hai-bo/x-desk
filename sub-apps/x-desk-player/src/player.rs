@@ -11,10 +11,9 @@ use windows::Win32::{
     Storage::FileSystem::{CreateFileW, FILE_ATTRIBUTE_NORMAL, FILE_GENERIC_READ, FILE_GENERIC_WRITE, OPEN_EXISTING},
     UI::WindowsAndMessaging::{DispatchMessageW, GetMessageW, MSG, PostMessageW, TranslateMessage},
 };
-
 use wnd::wide_string::WideString;
 
-use super::video_host::{PLAYER_PAUSE_MESSAGE, PLAYER_RESUME_MESSAGE, PLAYER_STOP_MESSAGE, VideoHost};
+use crate::video_host::{PLAYER_PAUSE_MESSAGE, PLAYER_RESUME_MESSAGE, PLAYER_STOP_MESSAGE, VideoHost};
 
 pub(crate) fn run_player() -> Result<()> {
     common::logger::init();

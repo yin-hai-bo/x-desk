@@ -15,10 +15,6 @@ pub fn run_app() -> Result<()> {
     }
 }
 
-pub fn run_player() -> Result<()> {
-    win::player::run_player()
-}
-
 pub fn run_webview() -> Result<()> {
     win::webview::run_webview()
 }

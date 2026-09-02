@@ -26,9 +26,7 @@ use windows::{
     core::{BSTR, PCWSTR, w},
 };
 use windows_implement::implement;
-use wnd::Window;
-
-use wnd::wide_string::WideString;
+use wnd::{Window, wide_string::WideString};
 
 const VIDEO_HOST_CLASS_NAME: PCWSTR = w!("X-Desk-VideoHost-Class");
 static VIDEO_HOST_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
