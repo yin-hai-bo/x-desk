@@ -5,7 +5,7 @@ use std::{
     thread,
 };
 
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use config::WallpaperKind;
 use serde::Serialize;
 use single_instance::SingleInstanceMessage;
@@ -14,41 +14,15 @@ use tauri::Manager;
 use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
 #[cfg(windows)]
 use windows::{
-    core::BOOL,
     Win32::{
         Foundation::{FALSE, LPARAM, RECT, TRUE},
         Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO},
         UI::WindowsAndMessaging::MONITORINFOF_PRIMARY,
     },
+    core::BOOL,
 };
 #[cfg(all(windows, not(debug_assertions)))]
 use windows_core::Interface;
-
-#[allow(dead_code)]
-const VIDEO_SOURCE_TEMPLATE: &str = r#"<html>
-<head>
-<style>
-  html, body {
-    margin: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    background: black;
-  }
-
-  video {
-    width: 100vw;
-    height: 100vh;
-    object-fit: contain;
-    display: block;
-  }
-</style>
-</head>
-<body>
-<video
-  src="{{VIDEO_FILE_URL}}"
-  autoplay loop muted playsinline />
-</body></html>"#;
 
 #[allow(dead_code)]
 const HTML_EXTENSIONS: &[&str] = &["html", "htm"];
@@ -139,10 +113,9 @@ fn source_for_selected_local_file(path: &Path) -> anyhow::Result<SelectedLocalFi
     }
 
     if VIDEO_EXTENSIONS.contains(&extension.as_str()) {
-        let video_file_url = path_to_file_url(path);
         return Ok(SelectedLocalFileSource {
-            kind: WallpaperKind::WebView,
-            source: VIDEO_SOURCE_TEMPLATE.replace("{{VIDEO_FILE_URL}}", &video_file_url),
+            kind: WallpaperKind::Video,
+            source: path.display().to_string(),
             preview_source: path.display().to_string(),
         });
     }
@@ -431,7 +404,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
-    use super::{path_to_file_url, source_for_selected_local_file, VIDEO_SOURCE_TEMPLATE};
+    use super::{path_to_file_url, source_for_selected_local_file};
     use config::WallpaperKind;
     use std::path::Path;
 
@@ -454,25 +427,22 @@ mod tests {
     }
 
     #[test]
-    fn video_file_source_uses_html_template_with_file_url() {
+    fn video_file_source_uses_direct_path() {
         let source = source_for_selected_local_file(Path::new("C:\\videos\\one clip.mp4")).unwrap();
 
-        assert_eq!(source.kind, WallpaperKind::WebView);
+        assert_eq!(source.kind, WallpaperKind::Video);
+        assert_eq!(source.source, "C:\\videos\\one clip.mp4");
         assert_eq!(source.preview_source, "C:\\videos\\one clip.mp4");
-        assert!(source.source.starts_with("<html>"));
-        assert!(source.source.contains("src=\"file:///C:/videos/one%20clip.mp4\""));
-        assert!(!source.source.contains("{{VIDEO_FILE_URL}}"));
     }
 
     #[test]
-    fn all_supported_video_extensions_generate_template_source() {
+    fn all_supported_video_extensions_use_direct_path() {
         for extension in ["mp4", "webm", "mov", "m4v"] {
             let path = format!("C:\\videos\\sample.{extension}");
             let source = source_for_selected_local_file(Path::new(&path)).unwrap();
 
-            assert_eq!(source.kind, WallpaperKind::WebView);
-            assert!(source.source.contains("<video"));
-            assert!(source.source.contains(format!("sample.{extension}").as_str()));
+            assert_eq!(source.kind, WallpaperKind::Video);
+            assert_eq!(source.source, path);
         }
     }
 
@@ -496,10 +466,5 @@ mod tests {
             path_to_file_url(Path::new("C:\\videos\\one clip.mp4")),
             "file:///C:/videos/one%20clip.mp4"
         );
-    }
-
-    #[test]
-    fn video_template_uses_expected_placeholder() {
-        assert!(VIDEO_SOURCE_TEMPLATE.contains("{{VIDEO_FILE_URL}}"));
     }
 }
