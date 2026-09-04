@@ -42,6 +42,7 @@ const WEBVIEW_WINDOW_CLASS_NAME: PCWSTR = w!("X-Desk-WebView-Class");
 const WEBVIEW_STOP_MESSAGE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 1;
 const WEBVIEW_PAUSE_MESSAGE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 2;
 const WEBVIEW_RESUME_MESSAGE: u32 = windows::Win32::UI::WindowsAndMessaging::WM_APP + 3;
+const VIDEO_VIRTUAL_HOST: &str = "x-desk-video.local";
 static WEBVIEW_WINDOW_CLASS_REGISTERED: Mutex<bool> = Mutex::new(false);
 
 const INSTALL_MEDIA_CONTROL_SCRIPT: &str = r#"
@@ -502,26 +503,95 @@ impl WebViewSource {
                 virtual_host_mappings,
             });
         }
-        if trimmed.starts_with("http://")
-            || trimmed.starts_with("https://")
-            || trimmed.starts_with("file://")
-            || trimmed.starts_with("data:")
-        {
-            return Ok(Self {
-                content: trimmed.to_string(),
-                virtual_host_mappings: Vec::new(),
-            });
+        if trimmed.starts_with("file://") {
+            return Self::from_local_video_path(&file_url_to_windows_path(trimmed)?);
         }
-        Ok(Self {
-            content: path_to_file_url(
-                &Path::new(trimmed)
-                    .canonicalize()
-                    .context("Resolve WebView source path failed")?
-                    .to_string_lossy(),
-            ),
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") || trimmed.starts_with("data:") {
+            return Ok(Self::from_video_url(trimmed));
+        }
+        Self::from_local_video_path(Path::new(trimmed))
+    }
+
+    fn from_video_url(video_url: &str) -> Self {
+        Self {
+            content: video_page_html(video_url),
             virtual_host_mappings: Vec::new(),
+        }
+    }
+
+    fn from_local_video_path(path: &Path) -> Result<Self> {
+        let path = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            std::env::current_dir()?.join(path)
+        };
+        let path = path
+            .canonicalize()
+            .context("Resolve WebView video source path failed")?;
+        let folder = path
+            .parent()
+            .context("WebView video source has no parent directory")?
+            .to_string_lossy()
+            .into_owned();
+        let file_name = path
+            .file_name()
+            .context("WebView video source has no file name")?
+            .to_string_lossy()
+            .replace('\\', "/");
+        let video_url = format!("https://{}/{}", VIDEO_VIRTUAL_HOST, encode_file_url_spaces(&file_name));
+
+        Ok(Self {
+            content: video_page_html(&video_url),
+            virtual_host_mappings: vec![VirtualHostMapping {
+                host: VIDEO_VIRTUAL_HOST.to_string(),
+                folder,
+            }],
         })
     }
+}
+
+fn video_page_html(video_url: &str) -> String {
+    format!(
+        r#"<!doctype html>
+<html>
+<head>
+<style>
+  html, body {{
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: black;
+  }}
+
+  video {{
+    width: 100vw;
+    height: 100vh;
+    object-fit: contain;
+    display: block;
+  }}
+</style>
+</head>
+<body>
+<video src="{}" autoplay loop muted playsinline></video>
+</body>
+</html>"#,
+        escape_html_attribute(video_url)
+    )
+}
+
+fn escape_html_attribute(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '&' => escaped.push_str("&amp;"),
+            '"' => escaped.push_str("&quot;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            _ => escaped.push(ch),
+        }
+    }
+    escaped
 }
 
 fn rewrite_file_urls_to_virtual_hosts(html: &str) -> Result<(String, Vec<VirtualHostMapping>)> {
@@ -580,13 +650,8 @@ fn is_inline_html(source: &str) -> bool {
     trimmed.starts_with("<!doctype html") || trimmed.starts_with("<!DOCTYPE html") || trimmed.starts_with("<html")
 }
 
-fn path_to_file_url(path: &str) -> String {
-    let normalized = path.replace('\\', "/");
-    if let Some(rest) = normalized.strip_prefix("//") {
-        format!("file://{}", rest)
-    } else {
-        format!("file:///{}", normalized)
-    }
+fn encode_file_url_spaces(path: &str) -> String {
+    path.replace(' ', "%20")
 }
 
 struct WebViewArgs {

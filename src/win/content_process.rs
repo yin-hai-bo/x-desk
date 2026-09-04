@@ -68,13 +68,9 @@ impl Drop for ContentProcessHandle {
 
 pub(super) fn start_content_process(content: &WallpaperContentSpec) -> Result<ContentProcessHandle> {
     match content.kind {
-        WallpaperKind::Video => start_video_process(content),
+        WallpaperKind::Video => start_webview_process(content),
         WallpaperKind::WebView => start_webview_process(content),
     }
-}
-
-fn start_video_process(content: &WallpaperContentSpec) -> Result<ContentProcessHandle> {
-    start_process(content, "x-desk-player.exe", "player")
 }
 
 fn start_webview_process(content: &WallpaperContentSpec) -> Result<ContentProcessHandle> {
