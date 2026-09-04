@@ -69,7 +69,6 @@ impl Drop for ContentProcessHandle {
 pub(super) fn start_content_process(content: &WallpaperContentSpec) -> Result<ContentProcessHandle> {
     match content.kind {
         WallpaperKind::Video => start_webview_process(content),
-        WallpaperKind::WebView => start_webview_process(content),
     }
 }
 

@@ -24,7 +24,6 @@ pub struct MonitorConfig {
 #[serde(rename_all = "camelCase")]
 pub enum WallpaperKind {
     Video,
-    WebView,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,10 +59,10 @@ impl Config {
             .filter(|source| !source.is_empty())
     }
 
-    pub fn set_webview_monitor_source(&mut self, index: usize, source: String, preview_source: Option<String>) {
+    pub fn set_video_monitor_source(&mut self, index: usize, source: String, preview_source: Option<String>) {
         self.ensure_monitor_entry(index);
         self.monitors[index] = MonitorConfig {
-            kind: WallpaperKind::WebView,
+            kind: WallpaperKind::Video,
             source,
             preview_source: preview_source.filter(|source| !source.trim().is_empty()),
         };
@@ -72,7 +71,7 @@ impl Config {
     pub fn clear_monitor_source(&mut self, index: usize) {
         self.ensure_monitor_entry(index);
         self.monitors[index] = MonitorConfig {
-            kind: WallpaperKind::WebView,
+            kind: WallpaperKind::Video,
             source: String::new(),
             preview_source: None,
         };
@@ -81,7 +80,7 @@ impl Config {
     fn ensure_monitor_entry(&mut self, index: usize) {
         while self.monitors.len() <= index {
             self.monitors.push(MonitorConfig {
-                kind: WallpaperKind::WebView,
+                kind: WallpaperKind::Video,
                 source: String::new(),
                 preview_source: None,
             });
@@ -156,7 +155,6 @@ impl WallpaperKind {
     fn as_config_value(self) -> &'static str {
         match self {
             Self::Video => "video",
-            Self::WebView => "webView",
         }
     }
 }
@@ -294,8 +292,8 @@ source = "C:\\videos\\two.mp4"
             &path,
             r#"
 [[monitors]]
-kind = "webView"
-source = "<html></html>"
+kind = "video"
+source = "C:\\videos\\one.mp4"
 previewSource = "C:\\videos\\one.mp4"
 "#,
         )
@@ -308,12 +306,12 @@ previewSource = "C:\\videos\\one.mp4"
     }
 
     #[test]
-    fn set_webview_monitor_source_pads_missing_entries() {
+    fn set_video_monitor_source_pads_missing_entries() {
         let mut config = Config::default();
 
-        config.set_webview_monitor_source(
+        config.set_video_monitor_source(
             2,
-            "<html></html>".to_string(),
+            "C:\\videos\\three.mp4".to_string(),
             Some("C:\\videos\\three.mp4".to_string()),
         );
 
@@ -322,29 +320,29 @@ previewSource = "C:\\videos\\one.mp4"
         assert_eq!(
             config.content_for_monitor(2),
             Some(WallpaperContentSpec {
-                kind: WallpaperKind::WebView,
-                source: "<html></html>".to_string(),
+                kind: WallpaperKind::Video,
+                source: "C:\\videos\\three.mp4".to_string(),
             })
         );
         assert_eq!(config.preview_source_for_monitor(2), Some("C:\\videos\\three.mp4"));
     }
 
     #[test]
-    fn set_webview_monitor_source_discards_empty_preview_source() {
+    fn set_video_monitor_source_discards_empty_preview_source() {
         let mut config = Config::default();
 
-        config.set_webview_monitor_source(0, "C:\\pages\\index.html".to_string(), Some("   ".to_string()));
+        config.set_video_monitor_source(0, "C:\\videos\\one.mp4".to_string(), Some("   ".to_string()));
 
         assert_eq!(config.preview_source_for_monitor(0), None);
     }
 
     #[test]
-    fn clear_monitor_source_preserves_index_as_disabled_webview_entry() {
+    fn clear_monitor_source_preserves_index_as_disabled_video_entry() {
         let mut config = Config {
             monitors: vec![MonitorConfig {
-                kind: WallpaperKind::WebView,
-                source: "C:\\pages\\index.html".to_string(),
-                preview_source: Some("C:\\pages\\index.html".to_string()),
+                kind: WallpaperKind::Video,
+                source: "C:\\videos\\one.mp4".to_string(),
+                preview_source: Some("C:\\videos\\one.mp4".to_string()),
             }],
         };
 
@@ -353,7 +351,7 @@ previewSource = "C:\\videos\\one.mp4"
         assert_eq!(config.content_for_monitor(0), None);
         assert_eq!(config.preview_source_for_monitor(0), None);
         assert_eq!(config.monitors.len(), 1);
-        assert_eq!(config.monitors[0].kind, WallpaperKind::WebView);
+        assert_eq!(config.monitors[0].kind, WallpaperKind::Video);
         assert_eq!(config.monitors[0].source, "");
     }
 
@@ -362,14 +360,14 @@ previewSource = "C:\\videos\\one.mp4"
         let mut config = Config {
             monitors: vec![
                 MonitorConfig {
-                    kind: WallpaperKind::WebView,
-                    source: "C:\\pages\\one.html".to_string(),
-                    preview_source: Some("C:\\pages\\one.html".to_string()),
+                    kind: WallpaperKind::Video,
+                    source: "C:\\videos\\one.mp4".to_string(),
+                    preview_source: Some("C:\\videos\\one.mp4".to_string()),
                 },
                 MonitorConfig {
-                    kind: WallpaperKind::WebView,
-                    source: "C:\\pages\\two.html".to_string(),
-                    preview_source: Some("C:\\pages\\two.html".to_string()),
+                    kind: WallpaperKind::Video,
+                    source: "C:\\videos\\two.mp4".to_string(),
+                    preview_source: Some("C:\\videos\\two.mp4".to_string()),
                 },
             ],
         };
@@ -379,11 +377,11 @@ previewSource = "C:\\videos\\one.mp4"
         assert_eq!(
             config.content_for_monitor(1),
             Some(WallpaperContentSpec {
-                kind: WallpaperKind::WebView,
-                source: "C:\\pages\\two.html".to_string(),
+                kind: WallpaperKind::Video,
+                source: "C:\\videos\\two.mp4".to_string(),
             })
         );
-        assert_eq!(config.preview_source_for_monitor(1), Some("C:\\pages\\two.html"));
+        assert_eq!(config.preview_source_for_monitor(1), Some("C:\\videos\\two.mp4"));
         assert_eq!(config.monitors.len(), 2);
     }
 
@@ -392,7 +390,7 @@ previewSource = "C:\\videos\\one.mp4"
         let path = temp_config_path();
         let config = Config {
             monitors: vec![MonitorConfig {
-                kind: WallpaperKind::WebView,
+                kind: WallpaperKind::Video,
                 source: "<html>\n<body></body>\n</html>".to_string(),
                 preview_source: Some("C:\\videos\\one.mp4".to_string()),
             }],
@@ -406,7 +404,7 @@ previewSource = "C:\\videos\\one.mp4"
         assert_eq!(
             Config::load_from_file(&path).unwrap().content_for_monitor(0),
             Some(WallpaperContentSpec {
-                kind: WallpaperKind::WebView,
+                kind: WallpaperKind::Video,
                 source: "<html>\n<body></body>\n</html>".to_string(),
             })
         );
@@ -418,17 +416,17 @@ previewSource = "C:\\videos\\one.mp4"
         let path = temp_config_path();
         let config = Config {
             monitors: vec![MonitorConfig {
-                kind: WallpaperKind::WebView,
-                source: "C:\\pages\\index.html".to_string(),
-                preview_source: Some("C:\\pages\\index.html".to_string()),
+                kind: WallpaperKind::Video,
+                source: "C:\\videos\\one.mp4".to_string(),
+                preview_source: Some("C:\\videos\\one.mp4".to_string()),
             }],
         };
 
         config.save_to_file(&path).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("source = \"C:\\\\pages\\\\index.html\""));
-        assert!(content.contains("previewSource = \"C:\\\\pages\\\\index.html\""));
+        assert!(content.contains("source = \"C:\\\\videos\\\\one.mp4\""));
+        assert!(content.contains("previewSource = \"C:\\\\videos\\\\one.mp4\""));
         let _ = fs::remove_file(path);
     }
 
@@ -437,7 +435,7 @@ previewSource = "C:\\videos\\one.mp4"
         let path = temp_config_path();
         let config = Config {
             monitors: vec![MonitorConfig {
-                kind: WallpaperKind::WebView,
+                kind: WallpaperKind::Video,
                 source: String::new(),
                 preview_source: None,
             }],
@@ -458,14 +456,14 @@ previewSource = "C:\\videos\\one.mp4"
         let config = Config {
             monitors: vec![
                 MonitorConfig {
-                    kind: WallpaperKind::WebView,
+                    kind: WallpaperKind::Video,
                     source: String::new(),
                     preview_source: None,
                 },
                 MonitorConfig {
-                    kind: WallpaperKind::WebView,
-                    source: "C:\\pages\\two.html".to_string(),
-                    preview_source: Some("C:\\pages\\two.html".to_string()),
+                    kind: WallpaperKind::Video,
+                    source: "C:\\videos\\two.mp4".to_string(),
+                    preview_source: Some("C:\\videos\\two.mp4".to_string()),
                 },
             ],
         };
@@ -477,8 +475,8 @@ previewSource = "C:\\videos\\one.mp4"
         assert_eq!(
             loaded.content_for_monitor(1),
             Some(WallpaperContentSpec {
-                kind: WallpaperKind::WebView,
-                source: "C:\\pages\\two.html".to_string(),
+                kind: WallpaperKind::Video,
+                source: "C:\\videos\\two.mp4".to_string(),
             })
         );
         let _ = fs::remove_file(path);

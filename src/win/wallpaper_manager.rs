@@ -1,7 +1,7 @@
 use super::{desktop::Desktop, desktop_attachment, monitor::MonitorManager};
 use crate::win::{dock::Dock, occlusion::DockRegion};
 use anyhow::{Context, Result, anyhow, bail};
-use config::{Config, WallpaperContentSpec, WallpaperKind};
+use config::{Config, WallpaperContentSpec};
 use windows::Win32::Foundation::{HWND, RECT};
 use wnd::Window;
 
@@ -81,16 +81,10 @@ impl WallpaperManager {
         rc: &RECT,
         content: &WallpaperContentSpec,
     ) -> Result<()> {
-        let content_hwnd = match content.kind {
-            WallpaperKind::Video => dock
-                .component_mut()
-                .ensure_content_process(content)
-                .context("Set dock content process failed")?,
-            WallpaperKind::WebView => dock
-                .component_mut()
-                .ensure_content_process(content)
-                .context("Set dock content process failed")?,
-        };
+        let content_hwnd = dock
+            .component_mut()
+            .ensure_content_process(content)
+            .context("Set dock content process failed")?;
         let attached = desktop_attachment::attach_content_window(content_hwnd, desktop, rc)?;
 
         log::info!(

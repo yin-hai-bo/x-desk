@@ -5,7 +5,7 @@ use std::{
     thread,
 };
 
-use anyhow::{Context, bail};
+use anyhow::{bail, Context};
 use config::WallpaperKind;
 use serde::Serialize;
 use single_instance::SingleInstanceMessage;
@@ -14,18 +14,16 @@ use tauri::Manager;
 use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Settings3;
 #[cfg(windows)]
 use windows::{
+    core::BOOL,
     Win32::{
         Foundation::{FALSE, LPARAM, RECT, TRUE},
         Graphics::Gdi::{EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO},
         UI::WindowsAndMessaging::MONITORINFOF_PRIMARY,
     },
-    core::BOOL,
 };
 #[cfg(all(windows, not(debug_assertions)))]
 use windows_core::Interface;
 
-#[allow(dead_code)]
-const HTML_EXTENSIONS: &[&str] = &["html", "htm"];
 #[allow(dead_code)]
 const VIDEO_EXTENSIONS: &[&str] = &["mp4", "webm", "mov", "m4v"];
 
@@ -78,7 +76,6 @@ struct MonitorPreviewViewModel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 enum MonitorPreviewKind {
-    Html,
     Video,
 }
 
@@ -103,14 +100,6 @@ fn source_for_selected_local_file(path: &Path) -> anyhow::Result<SelectedLocalFi
         .and_then(|extension| extension.to_str())
         .map(str::to_ascii_lowercase)
         .context("Selected file has no supported extension")?;
-
-    if HTML_EXTENSIONS.contains(&extension.as_str()) {
-        return Ok(SelectedLocalFileSource {
-            kind: WallpaperKind::WebView,
-            source: path.display().to_string(),
-            preview_source: path.display().to_string(),
-        });
-    }
 
     if VIDEO_EXTENSIONS.contains(&extension.as_str()) {
         return Ok(SelectedLocalFileSource {
@@ -150,12 +139,10 @@ fn extension_from_source(source: &str) -> Option<String> {
         .map(str::to_ascii_lowercase)
 }
 
-fn preview_for_webview_source(source: &str, preview_source: Option<&str>) -> Option<MonitorPreviewViewModel> {
+fn preview_for_video_source(source: &str, preview_source: Option<&str>) -> Option<MonitorPreviewViewModel> {
     let preview_source = preview_source.unwrap_or(source).trim();
     let extension = extension_from_source(preview_source)?;
-    let kind = if HTML_EXTENSIONS.contains(&extension.as_str()) {
-        MonitorPreviewKind::Html
-    } else if VIDEO_EXTENSIONS.contains(&extension.as_str()) {
+    let kind = if VIDEO_EXTENSIONS.contains(&extension.as_str()) {
         MonitorPreviewKind::Video
     } else {
         return None;
@@ -178,10 +165,9 @@ fn monitor_layout_view_model_from_parts(
             .map(|(index, monitor)| {
                 let content = config.content_for_monitor(index).map(|content| {
                     let preview = match content.kind {
-                        WallpaperKind::WebView => {
-                            preview_for_webview_source(&content.source, config.preview_source_for_monitor(index))
+                        WallpaperKind::Video => {
+                            preview_for_video_source(&content.source, config.preview_source_for_monitor(index))
                         }
-                        WallpaperKind::Video => None,
                     };
 
                     MonitorContentViewModel {
@@ -409,21 +395,10 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn html_file_source_uses_direct_path() {
-        let source = source_for_selected_local_file(Path::new("C:\\pages\\index.html")).unwrap();
+    fn html_file_source_is_rejected() {
+        let error = source_for_selected_local_file(Path::new("C:\\pages\\index.html")).unwrap_err();
 
-        assert_eq!(source.kind, WallpaperKind::WebView);
-        assert_eq!(source.source, "C:\\pages\\index.html");
-        assert_eq!(source.preview_source, "C:\\pages\\index.html");
-    }
-
-    #[test]
-    fn html_extension_matching_is_case_insensitive() {
-        let source = source_for_selected_local_file(Path::new("C:\\pages\\INDEX.HTM")).unwrap();
-
-        assert_eq!(source.kind, WallpaperKind::WebView);
-        assert_eq!(source.source, "C:\\pages\\INDEX.HTM");
-        assert_eq!(source.preview_source, "C:\\pages\\INDEX.HTM");
+        assert!(error.to_string().contains("Unsupported selected file extension: .html"));
     }
 
     #[test]
