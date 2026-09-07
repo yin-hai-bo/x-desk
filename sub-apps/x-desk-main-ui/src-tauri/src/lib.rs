@@ -7,7 +7,7 @@ use std::{
 
 use anyhow::{bail, Context};
 use config::WallpaperKind;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use single_instance::SingleInstanceMessage;
 use tauri::Manager;
 #[cfg(all(windows, not(debug_assertions)))]
@@ -73,6 +73,14 @@ struct MonitorPreviewViewModel {
     url: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "mode")]
+enum MonitorContentUpdateRequest {
+    LocalVideo { path: String },
+    InternetVideo { url: String },
+    None,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 enum MonitorPreviewKind {
@@ -122,8 +130,15 @@ fn path_to_file_url(path: &Path) -> String {
     }
 }
 
+fn is_internet_video_url(source: &str) -> bool {
+    let source = source.trim().to_ascii_lowercase();
+    source.starts_with("http://") || source.starts_with("https://")
+}
+
 fn file_url_from_source(source: &str) -> String {
     if source.to_ascii_lowercase().starts_with("file://") {
+        source.to_string()
+    } else if is_internet_video_url(source) {
         source.to_string()
     } else {
         path_to_file_url(Path::new(source))
@@ -141,17 +156,92 @@ fn extension_from_source(source: &str) -> Option<String> {
 
 fn preview_for_video_source(source: &str, preview_source: Option<&str>) -> Option<MonitorPreviewViewModel> {
     let preview_source = preview_source.unwrap_or(source).trim();
-    let extension = extension_from_source(preview_source)?;
-    let kind = if VIDEO_EXTENSIONS.contains(&extension.as_str()) {
-        MonitorPreviewKind::Video
-    } else {
-        return None;
-    };
+    if !is_internet_video_url(preview_source) {
+        let extension = extension_from_source(preview_source)?;
+        if !VIDEO_EXTENSIONS.contains(&extension.as_str()) {
+            return None;
+        }
+    }
 
     Some(MonitorPreviewViewModel {
-        kind,
+        kind: MonitorPreviewKind::Video,
         url: file_url_from_source(preview_source),
     })
+}
+
+fn save_monitor_content_update(
+    config: &mut config::Config,
+    monitor_index: usize,
+    request: MonitorContentUpdateRequest,
+) -> anyhow::Result<()> {
+    match request {
+        MonitorContentUpdateRequest::LocalVideo { path } => {
+            let path = path.trim();
+            if path.is_empty() {
+                bail!("Local video path is empty");
+            }
+
+            let source = source_for_selected_local_file(Path::new(path))?;
+            config.set_video_monitor_source(monitor_index, source.source, Some(source.preview_source));
+        }
+        MonitorContentUpdateRequest::InternetVideo { url } => {
+            let url = url.trim();
+            if !is_internet_video_url(url) {
+                bail!("Internet video URL must start with http:// or https://");
+            }
+
+            config.set_video_monitor_source(monitor_index, url.to_string(), Some(url.to_string()));
+        }
+        MonitorContentUpdateRequest::None => {
+            config.clear_monitor_source(monitor_index);
+        }
+    }
+
+    Ok(())
+}
+
+fn monitor_layout_view_model_from_config(config: &config::Config) -> Result<MonitorLayoutViewModel, String> {
+    let monitors = enumerate_display_monitors().map_err(|error| format!("{error:#}"))?;
+    Ok(monitor_layout_view_model_from_parts(monitors, config))
+}
+
+fn refreshed_monitor_layout_view_model(state: &MainUiState) -> Result<MonitorLayoutViewModel, String> {
+    let config = config::Config::load_from_file(&state.config_file_path).map_err(|error| format!("{error:#}"))?;
+    let view_model = monitor_layout_view_model_from_config(&config)?;
+
+    *state
+        .config
+        .lock()
+        .map_err(|_| "Main UI config state is unavailable".to_string())? = config;
+
+    Ok(view_model)
+}
+
+fn monitor_layout_view_model_from_state(state: &MainUiState) -> Result<MonitorLayoutViewModel, String> {
+    let config = state
+        .config
+        .lock()
+        .map_err(|_| "Main UI config state is unavailable".to_string())?;
+
+    monitor_layout_view_model_from_config(&config)
+}
+
+fn update_monitor_content(
+    state: &MainUiState,
+    monitor_index: usize,
+    request: MonitorContentUpdateRequest,
+) -> Result<MonitorLayoutViewModel, String> {
+    let mut config = state
+        .config
+        .lock()
+        .map_err(|_| "Main UI config state is unavailable".to_string())?;
+
+    save_monitor_content_update(&mut config, monitor_index, request).map_err(|error| format!("{error:#}"))?;
+    config
+        .save_to_file(&state.config_file_path)
+        .map_err(|error| format!("{error:#}"))?;
+
+    monitor_layout_view_model_from_config(&config)
 }
 
 fn monitor_layout_view_model_from_parts(
@@ -275,27 +365,26 @@ fn has_wallpaper_config(state: tauri::State<MainUiState>) -> bool {
 
 #[tauri::command]
 fn monitor_layout_view_model(state: tauri::State<MainUiState>) -> Result<MonitorLayoutViewModel, String> {
-    let monitors = enumerate_display_monitors().map_err(|error| format!("{error:#}"))?;
-    let config = state
-        .config
-        .lock()
-        .map_err(|_| "Main UI config state is unavailable".to_string())?;
-
-    Ok(monitor_layout_view_model_from_parts(monitors, &config))
+    monitor_layout_view_model_from_state(&state)
 }
 
 #[tauri::command]
 fn refresh_monitor_layout_view_model(state: tauri::State<MainUiState>) -> Result<MonitorLayoutViewModel, String> {
-    let monitors = enumerate_display_monitors().map_err(|error| format!("{error:#}"))?;
-    let config = config::Config::load_from_file(&state.config_file_path).map_err(|error| format!("{error:#}"))?;
-    let view_model = monitor_layout_view_model_from_parts(monitors, &config);
+    refreshed_monitor_layout_view_model(&state)
+}
 
-    *state
-        .config
-        .lock()
-        .map_err(|_| "Main UI config state is unavailable".to_string())? = config;
+#[tauri::command]
+fn set_monitor_content(
+    state: tauri::State<MainUiState>,
+    monitor_index: usize,
+    request: MonitorContentUpdateRequest,
+) -> Result<MonitorLayoutViewModel, String> {
+    update_monitor_content(&state, monitor_index, request)
+}
 
-    Ok(view_model)
+#[tauri::command]
+fn path_exists(path: &str) -> bool {
+    Path::new(path.trim()).exists()
 }
 
 fn load_main_ui_state() -> anyhow::Result<MainUiState> {
@@ -347,6 +436,7 @@ pub fn run() {
     let receiver = single_instanceinstance.take_message_receiver();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -354,7 +444,9 @@ pub fn run() {
             config_file_path,
             has_wallpaper_config,
             monitor_layout_view_model,
-            refresh_monitor_layout_view_model
+            refresh_monitor_layout_view_model,
+            set_monitor_content,
+            path_exists
         ])
         .setup(move |_app| {
             _app.manage(load_main_ui_state()?);

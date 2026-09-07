@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
 type MonitorRect = {
@@ -33,12 +34,25 @@ type MonitorLayoutViewModel = {
   monitors: MonitorViewModel[];
 };
 
+type WallpaperMode = "localVideo" | "internetVideo" | "none";
+
+type MonitorContentUpdateRequest =
+  | { mode: "localVideo"; path: string }
+  | { mode: "internetVideo"; url: string }
+  | { mode: "none" };
+
 const blockedShortcutKeys = new Set(["F5", "F11", "F12"]);
 const monitorLayout = ref<MonitorLayoutViewModel | null>(null);
 const monitorLayoutError = ref<string | null>(null);
 const isMonitorLayoutLoading = ref(false);
 const monitorMapElement = ref<HTMLElement | null>(null);
 const monitorMapSize = ref({ width: 0, height: 0 });
+const selectedMonitor = ref<MonitorViewModel | null>(null);
+const wallpaperMode = ref<WallpaperMode>("none");
+const localVideoPath = ref("");
+const internetVideoUrl = ref("");
+const wallpaperDialogError = ref<string | null>(null);
+const isWallpaperDialogSaving = ref(false);
 let monitorMapResizeObserver: ResizeObserver | null = null;
 
 const virtualDesktopBounds = computed(() => {
@@ -103,7 +117,91 @@ const localSourcePath = (source: string) => {
   return decodeURIComponent(url.pathname).replace(/^\/(?=[A-Za-z]:)/, "");
 };
 
-const videoPreviewUrl = (preview: MonitorPreview) => convertFileSrc(localSourcePath(preview.url));
+const isInternetVideoUrl = (source: string) => /^https?:\/\//i.test(source.trim());
+
+const videoPreviewUrl = (preview: MonitorPreview) => {
+  if (isInternetVideoUrl(preview.url)) {
+    return preview.url;
+  }
+
+  return convertFileSrc(localSourcePath(preview.url));
+};
+
+const openWallpaperDialog = (monitor: MonitorViewModel) => {
+  selectedMonitor.value = monitor;
+  wallpaperDialogError.value = null;
+  localVideoPath.value = "";
+  internetVideoUrl.value = "";
+
+  const source = monitor.content?.source?.trim() ?? "";
+  if (!source) {
+    wallpaperMode.value = "none";
+  } else if (isInternetVideoUrl(source)) {
+    wallpaperMode.value = "internetVideo";
+    internetVideoUrl.value = source;
+  } else {
+    wallpaperMode.value = "localVideo";
+    localVideoPath.value = localSourcePath(source);
+  }
+};
+
+const closeWallpaperDialog = () => {
+  if (isWallpaperDialogSaving.value) {
+    return;
+  }
+
+  selectedMonitor.value = null;
+  wallpaperDialogError.value = null;
+};
+
+const browseLocalVideo = async () => {
+  const currentPath = localVideoPath.value.trim();
+  const defaultPath = currentPath && (await invoke<boolean>("path_exists", { path: currentPath })) ? currentPath : undefined;
+  const selected = await open({
+    multiple: false,
+    defaultPath,
+    filters: [{ name: "Video", extensions: ["mp4", "webm", "mov", "m4v"] }],
+  });
+
+  if (typeof selected === "string") {
+    localVideoPath.value = selected;
+    wallpaperMode.value = "localVideo";
+  }
+};
+
+const monitorContentUpdateRequest = (): MonitorContentUpdateRequest => {
+  if (wallpaperMode.value === "localVideo") {
+    return { mode: "localVideo", path: localVideoPath.value };
+  }
+
+  if (wallpaperMode.value === "internetVideo") {
+    return { mode: "internetVideo", url: internetVideoUrl.value };
+  }
+
+  return { mode: "none" };
+};
+
+const saveWallpaperDialog = async () => {
+  const monitor = selectedMonitor.value;
+  if (!monitor) {
+    return;
+  }
+
+  isWallpaperDialogSaving.value = true;
+  wallpaperDialogError.value = null;
+
+  try {
+    monitorLayout.value = await invoke<MonitorLayoutViewModel>("set_monitor_content", {
+      monitorIndex: monitor.index,
+      request: monitorContentUpdateRequest(),
+    });
+    selectedMonitor.value = null;
+  } catch (error) {
+    wallpaperDialogError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    isWallpaperDialogSaving.value = false;
+  }
+};
 
 const loadMonitorLayout = async () => {
   isMonitorLayoutLoading.value = true;
@@ -221,6 +319,11 @@ onUnmounted(() => {
               class="monitor-card"
               :class="{ 'monitor-card-primary': monitor.isPrimary }"
               :style="monitorStyle(monitor)"
+              role="button"
+              tabindex="0"
+              @click="openWallpaperDialog(monitor)"
+              @keydown.enter.prevent="openWallpaperDialog(monitor)"
+              @keydown.space.prevent="openWallpaperDialog(monitor)"
             >
               <video
                 v-if="monitor.content?.preview?.kind === 'video'"
@@ -244,6 +347,66 @@ onUnmounted(() => {
         </div>
       </div>
     </section>
+
+    <div v-if="selectedMonitor" class="dialog-backdrop" role="presentation" @click.self="closeWallpaperDialog">
+      <section class="wallpaper-dialog" role="dialog" aria-modal="true" aria-labelledby="wallpaper-dialog-title">
+        <header class="wallpaper-dialog-header">
+          <h2 id="wallpaper-dialog-title">Monitor {{ selectedMonitor.index + 1 }} Wallpaper</h2>
+        </header>
+
+        <div class="wallpaper-options">
+          <label class="wallpaper-option" :class="{ 'wallpaper-option-selected': wallpaperMode === 'localVideo' }">
+            <input v-model="wallpaperMode" class="wallpaper-radio" type="radio" value="localVideo" />
+            <span class="wallpaper-option-body">
+              <span class="wallpaper-option-title">Local Video</span>
+              <span class="wallpaper-file-row">
+                <input
+                  v-model="localVideoPath"
+                  class="wallpaper-input"
+                  type="text"
+                  readonly
+                  placeholder="No local video selected"
+                />
+                <button class="secondary-button" type="button" @click.prevent="browseLocalVideo">Browse...</button>
+              </span>
+            </span>
+          </label>
+
+          <label class="wallpaper-option" :class="{ 'wallpaper-option-selected': wallpaperMode === 'internetVideo' }">
+            <input v-model="wallpaperMode" class="wallpaper-radio" type="radio" value="internetVideo" />
+            <span class="wallpaper-option-body">
+              <span class="wallpaper-option-title">Internet Video URL</span>
+              <input
+                v-model="internetVideoUrl"
+                class="wallpaper-input"
+                type="url"
+                placeholder="https://example.com/video.mp4"
+                @focus="wallpaperMode = 'internetVideo'"
+              />
+            </span>
+          </label>
+
+          <label class="wallpaper-option" :class="{ 'wallpaper-option-selected': wallpaperMode === 'none' }">
+            <input v-model="wallpaperMode" class="wallpaper-radio" type="radio" value="none" />
+            <span class="wallpaper-option-body">
+              <span class="wallpaper-option-title">None</span>
+              <span class="wallpaper-option-description">Clear this monitor's wallpaper configuration.</span>
+            </span>
+          </label>
+        </div>
+
+        <p v-if="wallpaperDialogError" class="dialog-error" role="alert">{{ wallpaperDialogError }}</p>
+
+        <footer class="wallpaper-dialog-actions">
+          <button class="secondary-button" type="button" :disabled="isWallpaperDialogSaving" @click="closeWallpaperDialog">
+            Cancel
+          </button>
+          <button class="primary-button" type="button" :disabled="isWallpaperDialogSaving" @click="saveWallpaperDialog">
+            {{ isWallpaperDialogSaving ? "Saving" : "OK" }}
+          </button>
+        </footer>
+      </section>
+    </div>
   </main>
 </template>
 
@@ -499,7 +662,15 @@ body {
   overflow: hidden;
   background: linear-gradient(145deg, rgba(0, 230, 246, 0.13), rgba(0, 40, 45, 0.62));
   color: var(--text-color);
+  cursor: pointer;
   box-shadow: inset 0 0 28px rgba(0, 230, 246, 0.08), 0 0 24px rgba(0, 230, 246, 0.16);
+}
+
+.monitor-card:hover,
+.monitor-card:focus-visible {
+  border-color: rgba(0, 230, 246, 0.96);
+  outline: none;
+  box-shadow: inset 0 0 32px rgba(0, 230, 246, 0.12), 0 0 32px rgba(0, 230, 246, 0.24);
 }
 
 .monitor-card-primary {
@@ -559,6 +730,144 @@ body {
   color: rgba(0, 230, 246, 0.66);
 }
 
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 28px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.68);
+  -webkit-app-region: no-drag;
+}
+
+.wallpaper-dialog {
+  width: min(680px, 100%);
+  border: 1px solid rgba(0, 230, 246, 0.38);
+  border-radius: 18px;
+  padding: 22px;
+  box-sizing: border-box;
+  background: linear-gradient(145deg, rgba(0, 17, 20, 0.98), rgba(0, 5, 6, 0.98));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.72), 0 0 36px rgba(0, 230, 246, 0.16);
+}
+
+.wallpaper-dialog-header h2 {
+  margin: 0 0 18px;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.wallpaper-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.wallpaper-option {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: flex-start;
+  border: 1px solid rgba(0, 230, 246, 0.2);
+  border-radius: 14px;
+  padding: 14px;
+  background: rgba(0, 230, 246, 0.05);
+}
+
+.wallpaper-option-selected {
+  border-color: rgba(0, 230, 246, 0.58);
+  background: rgba(0, 230, 246, 0.1);
+}
+
+.wallpaper-radio {
+  margin-top: 4px;
+  accent-color: #00e6f6;
+}
+
+.wallpaper-option-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wallpaper-option-title {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.wallpaper-option-description {
+  color: rgba(0, 230, 246, 0.66);
+  font-size: 13px;
+}
+
+.wallpaper-file-row {
+  display: flex;
+  gap: 10px;
+}
+
+.wallpaper-input {
+  min-width: 0;
+  flex: 1;
+  border: 1px solid rgba(0, 230, 246, 0.3);
+  border-radius: 10px;
+  padding: 9px 10px;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.36);
+  color: var(--text-color);
+}
+
+.wallpaper-input:focus {
+  border-color: rgba(0, 230, 246, 0.78);
+  outline: none;
+}
+
+.secondary-button,
+.primary-button {
+  border-radius: 10px;
+  padding: 9px 14px;
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.secondary-button {
+  border: 1px solid rgba(0, 230, 246, 0.34);
+  background: rgba(0, 230, 246, 0.06);
+}
+
+.primary-button {
+  border: 1px solid rgba(0, 230, 246, 0.68);
+  background: rgba(0, 230, 246, 0.18);
+}
+
+.secondary-button:hover:not(:disabled),
+.primary-button:hover:not(:disabled) {
+  background: rgba(0, 230, 246, 0.24);
+}
+
+.secondary-button:disabled,
+.primary-button:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.dialog-error {
+  margin: 14px 0 0;
+  border: 1px solid rgba(255, 105, 105, 0.42);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: #ff9a9a;
+  background: rgba(90, 0, 0, 0.24);
+}
+
+.wallpaper-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
 @media (max-width: 720px) {
   .content-area {
     padding: 16px;
@@ -570,6 +879,10 @@ body {
 
   .monitor-panel-header {
     align-items: stretch;
+    flex-direction: column;
+  }
+
+  .wallpaper-file-row {
     flex-direction: column;
   }
 }
