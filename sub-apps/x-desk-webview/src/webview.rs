@@ -216,14 +216,7 @@ impl WebViewWindow {
     fn navigate(&self) -> Result<()> {
         let webview = self.webview.as_ref().context("WebView2 is not initialized")?;
         let source = CoTaskMemPWSTR::from(self.source.as_str());
-        unsafe {
-            if is_inline_html(&self.source) {
-                webview.NavigateToString(*source.as_ref().as_pcwstr())
-            } else {
-                webview.Navigate(*source.as_ref().as_pcwstr())
-            }
-        }
-        .context("Navigate WebView2 failed")
+        unsafe { webview.NavigateToString(*source.as_ref().as_pcwstr()) }.context("Navigate WebView2 failed")
     }
 
     fn pause_videos_for_occlusion(&self) -> Result<()> {
@@ -496,13 +489,6 @@ impl WebViewSource {
         if trimmed.is_empty() {
             bail!("WebView source is empty");
         }
-        if is_inline_html(trimmed) {
-            let (content, virtual_host_mappings) = rewrite_file_urls_to_virtual_hosts(trimmed)?;
-            return Ok(Self {
-                content,
-                virtual_host_mappings,
-            });
-        }
         if trimmed.starts_with("file://") {
             return Self::from_local_video_path(&file_url_to_windows_path(trimmed)?);
         }
@@ -510,6 +496,19 @@ impl WebViewSource {
             return Ok(Self::from_video_url(trimmed));
         }
         Self::from_local_video_path(Path::new(trimmed))
+    }
+
+    #[allow(dead_code)]
+    fn from_inline_html(html: &str) -> Result<Self> {
+        let trimmed = html.trim();
+        if trimmed.is_empty() {
+            bail!("WebView HTML source is empty");
+        }
+        let (content, virtual_host_mappings) = rewrite_file_urls_to_virtual_hosts(trimmed)?;
+        Ok(Self {
+            content,
+            virtual_host_mappings,
+        })
     }
 
     fn from_video_url(video_url: &str) -> Self {
@@ -645,13 +644,51 @@ fn file_url_to_windows_path(file_url: &str) -> Result<std::path::PathBuf> {
     Ok(std::path::PathBuf::from(path))
 }
 
-fn is_inline_html(source: &str) -> bool {
-    let trimmed = source.trim_start();
-    trimmed.starts_with("<!doctype html") || trimmed.starts_with("<!DOCTYPE html") || trimmed.starts_with("<html")
-}
-
 fn encode_file_url_spaces(path: &str) -> String {
     path.replace(' ', "%20")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WebViewSource;
+    use std::fs;
+
+    #[test]
+    fn from_inline_html_rewrites_file_urls_but_keeps_html_entry_explicit() {
+        let temp_dir = std::env::temp_dir().join(format!(
+            "x-desk-webview-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&temp_dir).unwrap();
+        let video_path = temp_dir.join("one.mp4");
+        fs::write(&video_path, b"").unwrap();
+        let video_url = format!("file:///{}", video_path.to_string_lossy().replace('\\', "/"));
+        let html = r#"<!doctype html>
+<html>
+<body><video src="__VIDEO_URL__"></video></body>
+ </html>"#
+            .replace("__VIDEO_URL__", &video_url);
+        let source = WebViewSource::from_inline_html(html.as_str()).unwrap();
+
+        assert!(source.content.contains("https://x-desk-assets-1.local/one.mp4"));
+        assert_eq!(source.virtual_host_mappings.len(), 1);
+        assert_eq!(source.virtual_host_mappings[0].host, "x-desk-assets-1.local");
+        assert!(
+            source.virtual_host_mappings[0]
+                .folder
+                .ends_with(temp_dir.to_string_lossy().as_ref())
+        );
+        let _ = fs::remove_file(video_path);
+        let _ = fs::remove_dir_all(temp_dir);
+    }
+
+    #[test]
+    fn from_config_treats_html_as_video_source() {
+        assert!(WebViewSource::from_config("<html></html>").is_err());
+    }
 }
 
 struct WebViewArgs {
