@@ -5,14 +5,14 @@
 
 **x-desk** is a lightweight desktop wallpaper tool for Windows, written in **Rust**.
 
-It allows you to display **local videos** directly on your desktop background.
+It allows you to display **video files or browser-playable video URLs** directly on your desktop background, rendered through WebView2.
 By calling **native Windows APIs** for desktop integration, x-desk keeps the always-on main process focused on wallpaper orchestration.
 
 ---
 
 ## ✨ Features
 
-- 🎥 **Video on Desktop** – Play videos behind desktop icons without affecting normal interaction.
+- 🎥 **Video on Desktop** – Play local video files or video URLs behind desktop icons without affecting normal interaction.
 - 🧩 **Multi-process Rendering** – Runs wallpaper renderers in a separate `x-desk-webview` process and attaches its window to the desktop.
 - 🧊 **Non-intrusive** – Draws beneath desktop icons and pauses content when a dock is occluded.
 
@@ -41,6 +41,8 @@ By calling **native Windows APIs** for desktop integration, x-desk keeps the alw
 ### Configuration
 
 x-desk reads `%APPDATA%\yinhaibo\x-desk\config.toml`. If the file does not exist, x-desk creates an empty default config.
+
+`source` may be a local video path, `file://` URL, `http://` URL, `https://` URL, or `data:` URL that WebView2 can play as video. Arbitrary web pages, local HTML files, and inline HTML are not supported through config.
 
 Example:
 

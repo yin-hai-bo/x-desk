@@ -5033,19 +5033,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "x-desk-player"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "common",
- "log",
- "windows 0.62.2",
- "windows-core 0.62.2",
- "windows-implement",
- "wnd",
-]
-
-[[package]]
 name = "x-desk-webview"
 version = "0.1.0"
 dependencies = [
