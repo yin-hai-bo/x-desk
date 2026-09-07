@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
 type MonitorRect = {
@@ -15,6 +15,18 @@ type MonitorViewModel = {
   index: number;
   isPrimary: boolean;
   rect: MonitorRect;
+  content: MonitorContent | null;
+};
+
+type MonitorContent = {
+  kind: "video";
+  source: string;
+  preview: MonitorPreview | null;
+};
+
+type MonitorPreview = {
+  kind: "video";
+  url: string;
 };
 
 type MonitorLayoutViewModel = {
@@ -81,6 +93,17 @@ const monitorCanvasStyle = computed(() => {
     height: `${height}px`,
   };
 });
+
+const localSourcePath = (source: string) => {
+  if (!source.toLowerCase().startsWith("file://")) {
+    return source;
+  }
+
+  const url = new URL(source);
+  return decodeURIComponent(url.pathname).replace(/^\/(?=[A-Za-z]:)/, "");
+};
+
+const videoPreviewUrl = (preview: MonitorPreview) => convertFileSrc(localSourcePath(preview.url));
 
 const loadMonitorLayout = async () => {
   isMonitorLayoutLoading.value = true;
@@ -199,9 +222,20 @@ onUnmounted(() => {
               :class="{ 'monitor-card-primary': monitor.isPrimary }"
               :style="monitorStyle(monitor)"
             >
-              <span class="monitor-index">{{ monitor.index + 1 }}</span>
-              <span class="monitor-primary" v-if="monitor.isPrimary">Primary</span>
-              <span class="monitor-resolution">{{ monitor.rect.width }} x {{ monitor.rect.height }}</span>
+              <video
+                v-if="monitor.content?.preview?.kind === 'video'"
+                class="monitor-video"
+                :src="videoPreviewUrl(monitor.content.preview)"
+                autoplay
+                loop
+                muted
+                playsinline
+              />
+              <div class="monitor-overlay">
+                <span class="monitor-index">{{ monitor.index + 1 }}</span>
+                <span class="monitor-primary" v-if="monitor.isPrimary">Primary</span>
+                <span class="monitor-resolution">{{ monitor.rect.width }} x {{ monitor.rect.height }}</span>
+              </div>
             </article>
           </div>
 
@@ -457,16 +491,12 @@ body {
 
 .monitor-card {
   position: absolute;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
   min-width: 72px;
   min-height: 52px;
   border: 2px solid rgba(0, 230, 246, 0.72);
   border-radius: 12px;
   box-sizing: border-box;
+  overflow: hidden;
   background: linear-gradient(145deg, rgba(0, 230, 246, 0.13), rgba(0, 40, 45, 0.62));
   color: var(--text-color);
   box-shadow: inset 0 0 28px rgba(0, 230, 246, 0.08), 0 0 24px rgba(0, 230, 246, 0.16);
@@ -475,6 +505,29 @@ body {
 .monitor-card-primary {
   border-color: rgba(116, 255, 225, 0.9);
   box-shadow: inset 0 0 30px rgba(116, 255, 225, 0.12), 0 0 28px rgba(116, 255, 225, 0.18);
+}
+
+.monitor-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.monitor-overlay {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  box-sizing: border-box;
+  background: linear-gradient(145deg, rgba(0, 0, 0, 0.2), rgba(0, 24, 27, 0.34));
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.82);
 }
 
 .monitor-index {
