@@ -132,7 +132,7 @@ impl Config {
             content.push_str(toml_string(monitor.kind.as_config_value()).as_str());
             content.push('\n');
             content.push_str("source = ");
-            content.push_str(toml_source_string(&monitor.source).as_str());
+            content.push_str(toml_string(&monitor.source).as_str());
             content.push('\n');
 
             if let Some(preview_source) = &monitor.preview_source {
@@ -157,14 +157,6 @@ impl WallpaperKind {
             Self::Video => "video",
         }
     }
-}
-
-fn toml_source_string(value: &str) -> String {
-    if value.contains('\n') && !value.contains("'''") {
-        return format!("'''{}'''", value);
-    }
-
-    toml_string(value)
 }
 
 fn toml_string(value: &str) -> String {
@@ -386,7 +378,7 @@ previewSource = "C:\\videos\\one.mp4"
     }
 
     #[test]
-    fn save_to_file_writes_inline_html_source_as_readable_multiline_string() {
+    fn save_to_file_writes_multiline_source_as_regular_escaped_string() {
         let path = temp_config_path();
         let config = Config {
             monitors: vec![MonitorConfig {
@@ -399,7 +391,7 @@ previewSource = "C:\\videos\\one.mp4"
         config.save_to_file(&path).unwrap();
 
         let content = fs::read_to_string(&path).unwrap();
-        assert!(content.contains("source = '''<html>\n<body></body>\n</html>'''"));
+        assert!(content.contains("source = \"<html>\\n<body></body>\\n</html>\""));
         assert!(content.contains("previewSource = \"C:\\\\videos\\\\one.mp4\""));
         assert_eq!(
             Config::load_from_file(&path).unwrap().content_for_monitor(0),
