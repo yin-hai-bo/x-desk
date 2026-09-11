@@ -41,14 +41,20 @@ impl Drop for SingleInstance {
     }
 }
 
+#[derive(Debug, PartialEq, Eq)]
 pub enum SingleInstanceMessage {
     SecondInstanceStarted,
     ExitRequested,
+    ConfigReloadRequested,
 }
 
 impl SingleInstance {
     pub fn request_exit(name: &str) -> bool {
         notify_event(&core_obj_name(name, "-exit-requested"))
+    }
+
+    pub fn request_config_reload(name: &str) -> bool {
+        notify_event(&core_obj_name(name, "-config-reload-requested"))
     }
 
     /// 尝试获取 SingleInstance
@@ -64,6 +70,7 @@ impl SingleInstance {
         let mutex_name = core_obj_name(name, "");
         let second_instance_started_event_name = core_obj_name(name, "-second-instance-started");
         let exit_requested_event_name = core_obj_name(name, "-exit-requested");
+        let config_reload_requested_event_name = core_obj_name(name, "-config-reload-requested");
 
         // 尝试创建 Mutex，若已存在（另一个进程已创建同名对象），则尝试通知前一进程
         let mutex = unsafe {
@@ -102,6 +109,18 @@ impl SingleInstance {
             .duplicate()
             .context("Duplicate single-instance event failed")?;
 
+        let config_reload_requested_event = unsafe {
+            Win32Handle::new(
+                CreateEventW(
+                    None,
+                    false,
+                    false,
+                    PCWSTR::from_raw(config_reload_requested_event_name.as_ptr()),
+                )
+                .context("Create single-instance config reload event failed")?,
+            )
+        };
+
         let (sender, receiver) = mpsc::channel();
         let single_instance = SingleInstance {
             _mutex: mutex,
@@ -116,6 +135,7 @@ impl SingleInstance {
                 stop_flag,
                 second_instance_started_event,
                 exit_requested_event_clone,
+                config_reload_requested_event,
                 sender,
             )
         });
@@ -132,9 +152,14 @@ fn wait_for_single_instance_messages(
     stop_flag: Arc<AtomicBool>,
     second_instance_started_event: Win32Handle,
     exit_requested_event: Win32Handle,
+    config_reload_requested_event: Win32Handle,
     sender: Sender<SingleInstanceMessage>,
 ) {
-    let handles = [*second_instance_started_event, *exit_requested_event];
+    let handles = [
+        *second_instance_started_event,
+        *exit_requested_event,
+        *config_reload_requested_event,
+    ];
 
     loop {
         let wait_result = unsafe { WaitForMultipleObjects(&handles, false, INFINITE) };
@@ -149,6 +174,9 @@ fn wait_for_single_instance_messages(
             result if result.0 == WAIT_OBJECT_0.0 + 1 => {
                 let _ = sender.send(SingleInstanceMessage::ExitRequested);
                 break;
+            }
+            result if result.0 == WAIT_OBJECT_0.0 + 2 => {
+                let _ = sender.send(SingleInstanceMessage::ConfigReloadRequested);
             }
             WAIT_FAILED => break,
             _ => break,
@@ -229,5 +257,30 @@ impl std::ops::Deref for Win32Handle {
     type Target = HANDLE;
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SingleInstance, SingleInstanceMessage};
+    use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn request_config_reload_sends_config_reload_message() {
+        let name = unique_instance_name("config-reload");
+        let mut instance = SingleInstance::acquire(&name).unwrap().unwrap();
+        let receiver = instance.take_message_receiver().unwrap();
+
+        assert!(SingleInstance::request_config_reload(&name));
+
+        assert_eq!(
+            receiver.recv_timeout(Duration::from_secs(1)).unwrap(),
+            SingleInstanceMessage::ConfigReloadRequested
+        );
+    }
+
+    fn unique_instance_name(prefix: &str) -> String {
+        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        format!("x-desk-test-{prefix}-{}-{nanos}", std::process::id())
     }
 }
