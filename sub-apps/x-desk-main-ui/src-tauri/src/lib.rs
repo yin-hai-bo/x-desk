@@ -240,6 +240,9 @@ fn update_monitor_content(
     config
         .save_to_file(&state.config_file_path)
         .map_err(|error| format!("{error:#}"))?;
+    if !single_instance::SingleInstance::request_config_reload(common::MAIN_APP_INSTANCE_NAME) {
+        log::warn!("Request main app config reload failed");
+    }
 
     monitor_layout_view_model_from_config(&config)
 }
@@ -466,6 +469,7 @@ pub fn run() {
                             SingleInstanceMessage::ExitRequested => {
                                 app_handle.exit(0);
                             }
+                            SingleInstanceMessage::ConfigReloadRequested => {}
                         }
                     }
                 });
